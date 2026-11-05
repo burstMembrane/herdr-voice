@@ -77,7 +77,11 @@ if args.count > 1, args[1] == "setup" {
     exit(setupKey(for: provider) ? 0 : 1)
 }
 
-if HerdrTools.currentBackend == .hc { HerdrTools.hcOnly = true }
+if HerdrTools.currentBackend == .hc {
+    HerdrTools.hcOnly = true
+    HerdrTools.pmMode = env["HERDR_VOICE_MODE"] != "agents"
+}
+Vocabulary.refresh()
 
 // herdr-voice tool [<name> ['<json arguments>']]: run one of the voice model's tools from the command line,
 // exactly as the voice would. Tools that need a spoken yes (closing, removing, approving) can't be confirmed here.

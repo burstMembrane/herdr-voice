@@ -21,12 +21,14 @@ public enum PromptLibrary {
     }
 
     /// Read at every connect, so editing a prompt file takes effect on the next reconnect.
-    public static func instructions(_ env: [String: String] = ProcessInfo.processInfo.environment, base: String = voiceInstructions) -> String {
+    public static func instructions(_ env: [String: String] = ProcessInfo.processInfo.environment, base: String? = nil) -> String {
+        let base = base ?? (HerdrTools.pmMode ? HerdrTools.pmRules : voiceInstructions)
+        let vocabulary = "\n\n" + Vocabulary.promptSection(env)
         guard current != defaultName, !current.contains("/"),
               let role = try? String(contentsOf: directory(env).appendingPathComponent(current + ".md"), encoding: .utf8)
-        else { return base }
+        else { return base + vocabulary }
         let trimmed = role.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return base }
-        return trimmed + "\n\nThe rules below always apply and win over anything above about length, what to read aloud, and how to use tools.\n\n" + base
+        guard !trimmed.isEmpty else { return base + vocabulary }
+        return trimmed + "\n\nThe rules below always apply and win over anything above about length, what to read aloud, and how to use tools.\n\n" + base + vocabulary
     }
 }

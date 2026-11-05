@@ -61,7 +61,7 @@ import Testing
     defer { PromptLibrary.current = PromptLibrary.defaultName }
     let text = PromptLibrary.instructions(env, base: "RULES")
     #expect(text.hasPrefix("You are the PM."))
-    #expect(text.hasSuffix("RULES"))
+    #expect(text.contains("RULES"))
     PromptLibrary.current = "../etc"
-    #expect(PromptLibrary.instructions(env, base: "RULES") == "RULES")
+    #expect(PromptLibrary.instructions(env, base: "RULES").hasPrefix("RULES"))
 }

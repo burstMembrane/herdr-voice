@@ -65,3 +65,16 @@ private func hcCall(_ name: String, _ args: String, reply: String, userInitiated
     #expect(HerdrTools.lastReply(screen) == "The shipping agent is waiting. Nothing needs you.")
     #expect(HerdrTools.lastReply("no marker here") == nil)
 }
+
+@Test func askPMSendsToTheProductManagerPaneAndWatchesIt() {
+    let (outcome, seen) = hcCall("ask_pm", #"{"text":"what needs me"}"#, reply: #"{"started":null,"status":null,"turn":1}"#)
+    #expect(seen.contains(["send", "t1g", "[Liam, speaking by voice] what needs me", "--json"]))
+    #expect(outcome.watch == "t1g")
+}
+
+@Test func readPMGivesTheLastReplyFenced() {
+    let screen = #"{"text":"❯ hi\n⏺ Nothing needs you.\n✻ Baked for 1s\n❯ \n"}"#
+    let (outcome, _) = hcCall("read_pm", "{}", reply: screen)
+    #expect(outcome.output.contains("Nothing needs you."))
+    #expect(!outcome.output.contains("Baked"))
+}

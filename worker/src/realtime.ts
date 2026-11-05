@@ -17,7 +17,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   server.accept();
   const send = (o: unknown) => { try { server.send(JSON.stringify(o)); } catch { /* closed */ } };
 
-  let instructions = "", tools: any[] = [], voice = "luna";
+  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [];
   let messages: any[] = [];
   let pendingUser: any[] = []; // content blocks waiting for the next turn (tool results, agent reports)
   let gen = 0; // bumps on barge-in / cancel; stale work drops its output
@@ -28,7 +28,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   // and reopened on the next audio; that must never end the client's session.
   let fluxP: Promise<WebSocket> | null = null;
   const openFlux = (): Promise<WebSocket> => (fluxP ??= (async () => {
-    const resp: any = await env.AI.run("@cf/deepgram/flux", { encoding: "linear16", sample_rate: "24000", eager_eot_threshold: "0.5", eot_timeout_ms: "2500", keyterm: KEYTERMS }, { websocket: true });
+    const resp: any = await env.AI.run("@cf/deepgram/flux", { encoding: "linear16", sample_rate: "24000", eager_eot_threshold: "0.5", eot_timeout_ms: "2500", keyterm: [...new Set([...keyterms, ...KEYTERMS])].slice(0, 100) }, { websocket: true });
     const ws: WebSocket = resp.webSocket;
     ws.accept();
     ws.addEventListener("message", (m) => {
@@ -132,6 +132,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
       case "session.update": {
         const s = d.session ?? {};
         instructions = s.instructions ?? instructions; voice = s.voice ?? voice;
+        if (Array.isArray(s.keyterms)) keyterms = s.keyterms.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim().slice(0, 40)).slice(0, 80);
         tools = (s.tools ?? []).filter((t: any) => t.type === "function").map((t: any) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
         send({ type: "session.updated" });
         break; }

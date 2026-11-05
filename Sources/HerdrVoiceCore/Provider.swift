@@ -156,6 +156,7 @@ public enum Provider: String, CaseIterable {
                 "instructions": instructions,
                 "voice": voice,
                 "tools": tools,
+                "keyterms": Vocabulary.terms(),
             ] as [String: Any]]
         case .grok:
             tools.append(["type": "web_search"])
@@ -235,9 +236,16 @@ public enum Keychain {
 /// When herdr-voice starts, or the model is switched from the orb, the voice introduces itself and says it's ready.
 /// In its own words each time: a fixed line sounds canned.
 public enum Greeting {
-    public static let prompt = "[startup] A new session just started. Greet the developer: introduce yourself naturally "
-        + "as herdr-voice, the voice for their Herdr coding agents, and say you're ready to help. One or two short "
-        + "sentences in your own words, no fixed script, and don't list your features. Then stay quiet until they speak."
+    /// The default intro is fixed to herdr-voice; a chosen role prompt greets in its own character instead.
+    public static var prompt: String {
+        if PromptLibrary.current != PromptLibrary.defaultName {
+            return "[startup] A new session just started. Greet the developer in one short sentence, in the role your instructions "
+                + "give you (not as a generic assistant), and say you're ready. Then stay quiet until they speak."
+        }
+        return "[startup] A new session just started. Greet the developer: introduce yourself naturally "
+            + "as herdr-voice, the voice for their Herdr coding agents, and say you're ready to help. One or two short "
+            + "sentences in your own words, no fixed script, and don't list your features. Then stay quiet until they speak."
+    }
 }
 
 public let voiceInstructions = """

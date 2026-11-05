@@ -328,6 +328,7 @@ final class Realtime {
         task.resume()
         let handle = wire.capabilities.nativeResumption ? resumeHandle : nil
         resumedWithContext = handle != nil
+        Vocabulary.refresh() // fills in agent names for the next connect; never blocks this one
         if PromptLibrary.current != PromptLibrary.defaultName { log("✎ prompt: \(PromptLibrary.current)") }
         send(.setup(instructions: PromptLibrary.instructions(), voice: voice, resumeHandle: handle))
         status = .live
