@@ -17,7 +17,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   server.accept();
   const send = (o: unknown) => { try { server.send(JSON.stringify(o)); } catch { /* closed */ } };
 
-  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [];
+  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [], silentToolText = false;
   let messages: any[] = [];
   let pendingUser: any[] = []; // content blocks waiting for the next turn (tool results, agent reports)
   let gen = 0; // bumps on barge-in / cancel; stale work drops its output
@@ -92,6 +92,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
 
     const rd = r.body.getReader(), dec = new TextDecoder();
     let buf = "", full = "", sentence = "", cur: any = null; const blocks: any[] = [];
+    let released = !silentToolText, sawTool = false;
     let speakChain: Promise<void> = Promise.resolve();
     const flushSentence = (force: boolean) => {
       const m = sentence.match(/^([\s\S]*?[.!?])(\s+|$)/);
@@ -106,9 +107,14 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         const ev = buf.slice(0, i); buf = buf.slice(i + 2);
         const line = ev.split("\n").find((l) => l.startsWith("data: ")); if (!line) continue;
         const d = JSON.parse(line.slice(6));
-        if (d.type === "content_block_start") { cur = { ...d.content_block, _json: "" }; blocks.push(cur); }
+        if (d.type === "content_block_start") { cur = { ...d.content_block, _json: "" }; blocks.push(cur); if (cur.type === "tool_use") { sawTool = true; if (!released) { sentence = ""; full = ""; } } }
         else if (d.type === "content_block_delta") {
-          if (d.delta.type === "text_delta") { cur.text = (cur.text ?? "") + d.delta.text; full += d.delta.text; sentence += d.delta.text; send({ type: "response.output_audio_transcript.delta", delta: d.delta.text }); flushSentence(false); }
+          if (d.delta.type === "text_delta") {
+            cur.text = (cur.text ?? "") + d.delta.text; full += d.delta.text; sentence += d.delta.text;
+            // silent_tool_text: text said before a tool call is held back (and dropped if a tool call follows); a long text is a real answer
+            if (silentToolText && !released && !sawTool && full.length >= 140) released = true;
+            if (!silentToolText || released) { send({ type: "response.output_audio_transcript.delta", delta: d.delta.text }); flushSentence(false); }
+          }
           else if (d.delta.type === "input_json_delta") cur._json += d.delta.partial_json;
         } else if (d.type === "content_block_stop" && cur?.type === "tool_use") {
           cur.input = cur._json ? JSON.parse(cur._json) : {};
@@ -116,7 +122,8 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         } else if (d.type === "error") send({ type: "error", error: { message: d.error?.message ?? "claude stream error" } });
       }
     }
-    if (myGen === gen) flushSentence(true);
+    if (!released && !sawTool) { released = true; send({ type: "response.output_audio_transcript.delta", delta: full }); }
+    if (myGen === gen && (released || !sawTool)) flushSentence(true);
     await speakChain;
     const content = blocks.filter((b) => b.type === "text" ? b.text : b.type === "tool_use").map((b) => b.type === "text" ? { type: "text", text: b.text } : { type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} });
     if (content.length) messages.push({ role: "assistant", content }); else messages.pop(); // nothing came back: forget the user turn too
@@ -132,6 +139,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
       case "session.update": {
         const s = d.session ?? {};
         instructions = s.instructions ?? instructions; voice = s.voice ?? voice;
+        silentToolText = s.silent_tool_text === true;
         if (Array.isArray(s.keyterms)) keyterms = s.keyterms.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim().slice(0, 40)).slice(0, 80);
         tools = (s.tools ?? []).filter((t: any) => t.type === "function").map((t: any) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
         send({ type: "session.updated" });

@@ -855,7 +855,11 @@ final class Realtime {
                     self.addToolOutput(ToolOutput(callID: callID, name: name, output: outcome.output))
                 }
                 // One reply once every call from this turn has answered, not one per call.
-                if self.replies.callFinished() { self.requestResponse() }
+                if self.replies.callFinished() {
+                    // In product-manager mode a sent message gets no spoken reply of its own; the answer is what speaks.
+                    let silent = HerdrTools.pmMode && name == "ask_pm" && !outcome.output.hasPrefix("error")
+                    if !silent { self.requestResponse() }
+                }
             }
         }
     }
