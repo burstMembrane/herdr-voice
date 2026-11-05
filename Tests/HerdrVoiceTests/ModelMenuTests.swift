@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import HerdrVoiceCore
 
@@ -48,4 +49,19 @@ import Testing
 @Test func onlyTheCloudflareProviderOffersAVoiceMenu() {
     #expect(Provider.cloudflare.voices.contains("hyperion"))
     #expect(Provider.allCases.filter { !$0.voices.isEmpty } == [.cloudflare])
+}
+
+@Test func promptLibraryListsFilesAndPutsTheRoleBeforeTheRules() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hv-prompts-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try "You are the PM.\n".write(to: dir.appendingPathComponent("pm.md"), atomically: true, encoding: .utf8)
+    let env = ["HERDR_VOICE_PROMPTS_DIR": dir.path]
+    #expect(PromptLibrary.names(env) == ["default", "pm"])
+    PromptLibrary.current = "pm"
+    defer { PromptLibrary.current = PromptLibrary.defaultName }
+    let text = PromptLibrary.instructions(env, base: "RULES")
+    #expect(text.hasPrefix("You are the PM."))
+    #expect(text.hasSuffix("RULES"))
+    PromptLibrary.current = "../etc"
+    #expect(PromptLibrary.instructions(env, base: "RULES") == "RULES")
 }

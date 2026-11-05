@@ -77,16 +77,18 @@ if args.count > 1, args[1] == "setup" {
     exit(setupKey(for: provider) ? 0 : 1)
 }
 
+if HerdrTools.currentBackend == .hc { HerdrTools.hcOnly = true }
+
 // herdr-voice tool [<name> ['<json arguments>']]: run one of the voice model's tools from the command line,
 // exactly as the voice would. Tools that need a spoken yes (closing, removing, approving) can't be confirmed here.
 if args.count > 1, args[1] == "tool" {
     guard args.count > 2 else {
-        for schema in HerdrTools.schemas {
+        for schema in HerdrTools.activeSchemas {
             print("\(schema["name"] as? String ?? "")\n    \(schema["description"] as? String ?? "")")
         }
         exit(0)
     }
-    let outcome = HerdrTools.call(args[2], arguments: args.count > 3 ? args[3] : "{}")
+    let outcome = HerdrTools.call(args[2], arguments: args.count > 3 ? args[3] : "{}", backend: HerdrTools.currentBackend)
     print(outcome.output)
     // watch_pane: wait here for what the voice would hear later.
     if let watch = outcome.paneWatch {
@@ -242,6 +244,19 @@ func modelChoices() -> [Orb.MenuChoice] {
         }
         voiceMenu = [entry]
     }
+    var promptMenu: [Orb.MenuChoice] = []
+    let prompts = PromptLibrary.names()
+    if prompts.count > 1 {
+        var entry = Orb.MenuChoice(title: "Prompt", checked: false, enabled: true, separatorAfter: true) {}
+        entry.children = prompts.map { name in
+            Orb.MenuChoice(title: name, checked: name == PromptLibrary.current, enabled: true) {
+                guard name != PromptLibrary.current else { return }
+                PromptLibrary.current = name
+                session.reloadInstructions(name)
+            }
+        }
+        promptMenu = [entry]
+    }
     return (voicePaneChoice().map { [$0] } ?? []) + models.map { entry in
         Orb.MenuChoice(title: entry.title, checked: entry.checked, enabled: entry.enabled) {
             let voice = entry.provider.voice(startedWith: startedWith, configured: env["HERDR_VOICE_VOICE"])
@@ -258,7 +273,7 @@ func modelChoices() -> [Orb.MenuChoice] {
             localRuntime.stop()
             session.switchProvider(to: entry.provider, key: found.value, voice: voice)
         }
-    } + voiceMenu
+    } + voiceMenu + promptMenu
 }
 let orb = Orb(onClick: { session.toggleMute() }, menuChoices: modelChoices, onQuit: {
     session.shutdown()

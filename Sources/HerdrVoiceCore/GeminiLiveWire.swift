@@ -62,7 +62,7 @@ public final class GeminiLiveWire: Wire {
 
     /// herdr-voice's tools as Gemini function declarations (JSON Schema passed as-is), plus Google Search.
     static func tools() -> [[String: Any]] {
-        let declarations: [[String: Any]] = HerdrTools.schemas.compactMap { tool in
+        let declarations: [[String: Any]] = HerdrTools.activeSchemas.compactMap { tool in
             guard let name = tool["name"] as? String else { return nil }
             var d: [String: Any] = ["name": name]
             if let description = tool["description"] { d["description"] = description }

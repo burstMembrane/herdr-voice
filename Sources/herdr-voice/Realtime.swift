@@ -328,7 +328,7 @@ final class Realtime {
         task.resume()
         let handle = wire.capabilities.nativeResumption ? resumeHandle : nil
         resumedWithContext = handle != nil
-        send(.setup(instructions: voiceInstructions, voice: voice, resumeHandle: handle))
+        send(.setup(instructions: PromptLibrary.instructions(), voice: voice, resumeHandle: handle))
         status = .live
         if hadSession || attempts > 0 {
             log("↻ reconnecting to \(provider.rawValue)")
@@ -733,6 +733,12 @@ final class Realtime {
         renewConnection()
     }
 
+    /// Reopens the connection so a prompt chosen from the orb's menu takes effect; the conversation carries over.
+    func reloadInstructions(_ name: String) {
+        log("✎ prompt → \(name)")
+        renewConnection()
+    }
+
     func completeProviderSwitch(key newKey: String, request: URLRequest? = nil) {
         providerPreparing = false
         connectionLost = false
@@ -831,7 +837,7 @@ final class Realtime {
         toolsRunning += 1
         let id = connection
         DispatchQueue.global().async {
-            let outcome = HerdrTools.call(name, arguments: args, userInitiated: userInitiated)
+            let outcome = HerdrTools.call(name, arguments: args, userInitiated: userInitiated, backend: HerdrTools.currentBackend)
             DispatchQueue.main.async {
                 self.toolsRunning -= 1
                 if let target = outcome.watch { self.watch(target) }
@@ -854,7 +860,7 @@ final class Realtime {
 
     private func watch(_ target: String) {
         guard busyAgents.insert(target).inserted else { return }
-        HerdrTools.settle(target) { report in
+        HerdrTools.settle(target, backend: HerdrTools.currentBackend) { report in
             DispatchQueue.main.async {
                 self.busyAgents.remove(target)
                 log("← \(target) settled")

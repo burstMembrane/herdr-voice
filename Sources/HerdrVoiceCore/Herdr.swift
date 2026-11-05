@@ -1,6 +1,6 @@
 import Foundation
 
-/// Voice-model tools backed by the `herdr` CLI.
+/// Voice-model tools backed by the `herdr` CLI, or by `hc` on the new Herdr (see HcBackend.swift).
 public enum HerdrTools {
     public static let allowedKeys: Set<String> =
         Set(["enter", "esc", "up", "down", "tab", "y", "n"]).union((1...9).map(String.init))
@@ -55,6 +55,7 @@ public enum HerdrTools {
     /// The running Herdr's own binary when Herdr says where it is (HERDR_BIN_PATH, set in every pane and plugin),
     /// so a different `herdr` earlier on PATH can't answer instead; otherwise `herdr` from PATH.
     static func herdrCommand(_ env: [String: String] = ProcessInfo.processInfo.environment) -> (String, [String]) {
+        if backend(env) == .hc, let hc = executable("hc", env) { return (hc, []) }
         if let path = env["HERDR_BIN_PATH"], path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) {
             return (path, [])
         }
@@ -117,8 +118,9 @@ public enum HerdrTools {
     /// `userInitiated` is false when the model is acting on an agent report rather than on the developer's voice;
     /// prompts sent then need a spoken confirmation, since the report may carry injected instructions.
     public static func call(_ name: String, arguments: String, run: Runner = herdr, gate: ConfirmGate = .shared,
-                            userInitiated: Bool = true) -> Outcome {
+                            userInitiated: Bool = true, backend: HerdrBackend = .herdr) -> Outcome {
         let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any]) ?? [:]
+        if backend == .hc { return callHc(name, args, run, gate, userInitiated: userInitiated) }
         let target = args["target"] as? String ?? ""
         let confirmed = args["confirmed"] as? Bool ?? false
         switch name {
@@ -178,7 +180,8 @@ public enum HerdrTools {
     /// long as the agent's turn (up to an hour), so it holds no thread: each step continues from the previous
     /// process's exit.
     public static func settle(_ target: String, runAsync: @escaping AsyncRunner = herdrAsync, run: @escaping Runner = herdr,
-                              done: @escaping (String) -> Void) {
+                              backend: HerdrBackend = .herdr, done: @escaping (String) -> Void) {
+        if backend == .hc { return settleHc(target, runAsync: runAsync, run: run, done: done) }
         // After answer_agent the agent may still show blocked for a moment; let it pick back up first.
         runAsync(["agent", "wait", target, "--until", "working", "--timeout", "5000"]) { _ in
             runAsync(["agent", "wait", target, "--timeout", "3600000"]) { out in

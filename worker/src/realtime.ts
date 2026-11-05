@@ -1,6 +1,6 @@
 // Cascade behind the OpenAI Realtime protocol: Flux (STT) -> Claude (brain, tools) -> Aura (TTS).
 // herdr-voice's OpenAIRealtimeWire talks to this as if it were a realtime model.
-const KEYTERMS = ["claude", "codex", "herdr", "worktree", "workspace", "pane", "forge"];
+const KEYTERMS = ["sheetmuse", "claude", "codex", "herdr", "worktree", "workspace", "pane", "forge"];
 const SPEAKERS = new Set(["amalthea", "andromeda", "apollo", "arcas", "aries", "asteria", "athena", "atlas", "aurora", "callista", "cora", "cordelia", "delia", "draco", "electra", "harmonia", "helena", "hera", "hermes", "hyperion", "iris", "janus", "juno", "jupiter", "luna", "mars", "minerva", "neptune", "odysseus", "ophelia", "orion", "orpheus", "pandora", "phoebe", "pluto", "saturn", "thalia", "theia", "vesta", "zeus"]);
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -24,21 +24,31 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   let queue: Promise<void> = Promise.resolve();
 
   // ---- STT: Flux over the AI binding's websocket ----
-  const fluxResp: any = await env.AI.run("@cf/deepgram/flux", { encoding: "linear16", sample_rate: "24000", eager_eot_threshold: "0.5", eot_timeout_ms: "2500", keyterm: KEYTERMS }, { websocket: true });
-  const flux: WebSocket = fluxResp.webSocket;
-  flux.accept();
-  flux.addEventListener("message", (m) => {
-    let d: any; try { d = JSON.parse(String(m.data)); } catch { return; }
-    if (d.event === "StartOfTurn") { gen++; send({ type: "input_audio_buffer.speech_started" }); }
-    if (d.event === "EndOfTurn") {
-      send({ type: "input_audio_buffer.speech_stopped" });
-      const text = String(d.transcript ?? "").trim();
-      if (!text) return;
-      send({ type: "conversation.item.input_audio_transcription.completed", transcript: text });
-      pendingUser.push({ type: "text", text });
-      enqueueTurn();
-    }
-  });
+  // Flux closes itself after a stretch without audio (herdr-voice sends speech only), so it is opened on demand
+  // and reopened on the next audio; that must never end the client's session.
+  let fluxP: Promise<WebSocket> | null = null;
+  const openFlux = (): Promise<WebSocket> => (fluxP ??= (async () => {
+    const resp: any = await env.AI.run("@cf/deepgram/flux", { encoding: "linear16", sample_rate: "24000", eager_eot_threshold: "0.5", eot_timeout_ms: "2500", keyterm: KEYTERMS }, { websocket: true });
+    const ws: WebSocket = resp.webSocket;
+    ws.accept();
+    ws.addEventListener("message", (m) => {
+      let d: any; try { d = JSON.parse(String(m.data)); } catch { return; }
+      if (d.event === "StartOfTurn") { gen++; send({ type: "input_audio_buffer.speech_started" }); }
+      if (d.event === "EndOfTurn") {
+        send({ type: "input_audio_buffer.speech_stopped" });
+        const text = String(d.transcript ?? "").trim();
+        if (!text) return;
+        send({ type: "conversation.item.input_audio_transcription.completed", transcript: text });
+        pendingUser.push({ type: "text", text });
+        enqueueTurn();
+      }
+    });
+    const drop = () => { if (fluxP && cur === ws) fluxP = null; };
+    ws.addEventListener("close", drop); ws.addEventListener("error", drop);
+    cur = ws;
+    return ws;
+  })());
+  let cur: WebSocket | null = null;
 
   // ---- TTS: Aura, streamed, kept sample-aligned ----
   async function speak(text: string, itemId: string, myGen: number) {
@@ -125,7 +135,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         tools = (s.tools ?? []).filter((t: any) => t.type === "function").map((t: any) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
         send({ type: "session.updated" });
         break; }
-      case "input_audio_buffer.append": flux.send(unb64(d.audio)); break;
+      case "input_audio_buffer.append": { const audio = unb64(d.audio); openFlux().then((f) => f.send(audio)).catch((e) => send({ type: "error", error: { message: "stt: " + String(e).slice(0, 200) } })); break; }
       case "input_audio_buffer.clear": gen++; break;
       case "conversation.item.create": {
         const it = d.item ?? {};
@@ -137,9 +147,8 @@ export async function realtime(req: Request, env: any): Promise<Response> {
       default: break; // conversation.item.truncate etc.: nothing to do
     }
   });
-  const close = () => { gen++; try { flux.close(); } catch { /* */ } try { server.close(); } catch { /* */ } };
+  const close = () => { gen++; try { cur?.close(); } catch { /* */ } try { server.close(); } catch { /* */ } };
   server.addEventListener("close", close); server.addEventListener("error", close);
-  flux.addEventListener("close", () => { try { server.close(); } catch { /* */ } });
 
   send({ type: "session.created" });
   return new Response(null, { status: 101, webSocket: client });

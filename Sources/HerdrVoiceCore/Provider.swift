@@ -131,7 +131,7 @@ public enum Provider: String, CaseIterable {
     /// OpenAI GA puts voice/VAD under `audio`, xAI keeps them at the session root.
     public func sessionUpdate(instructions: String, voice: String) -> [String: Any] {
         let pcm: [String: Any] = ["type": "audio/pcm", "rate": 24000]
-        var tools = HerdrTools.schemas
+        var tools = HerdrTools.activeSchemas
         switch self {
         case .local:
             return LocalWire.sessionUpdate(instructions: instructions, voice: voice)
