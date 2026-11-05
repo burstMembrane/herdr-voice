@@ -328,6 +328,7 @@ final class Realtime {
         task.resume()
         let handle = wire.capabilities.nativeResumption ? resumeHandle : nil
         resumedWithContext = handle != nil
+        if PromptLibrary.current != PromptLibrary.defaultName { log("✎ prompt: \(PromptLibrary.current)") }
         send(.setup(instructions: PromptLibrary.instructions(), voice: voice, resumeHandle: handle))
         status = .live
         if hadSession || attempts > 0 {

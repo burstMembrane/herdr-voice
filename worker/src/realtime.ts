@@ -1,6 +1,6 @@
 // Cascade behind the OpenAI Realtime protocol: Flux (STT) -> Claude (brain, tools) -> Aura (TTS).
 // herdr-voice's OpenAIRealtimeWire talks to this as if it were a realtime model.
-const KEYTERMS = ["sheetmuse", "claude", "codex", "herdr", "worktree", "workspace", "pane", "forge"];
+const KEYTERMS = ["pane", "panes", "PM", "product manager", "sheetmuse", "claude", "codex", "herdr", "worktree", "workspace", "pane", "forge"];
 const SPEAKERS = new Set(["amalthea", "andromeda", "apollo", "arcas", "aries", "asteria", "athena", "atlas", "aurora", "callista", "cora", "cordelia", "delia", "draco", "electra", "harmonia", "helena", "hera", "hermes", "hyperion", "iris", "janus", "juno", "jupiter", "luna", "mars", "minerva", "neptune", "odysseus", "ophelia", "orion", "orpheus", "pandora", "phoebe", "pluto", "saturn", "thalia", "theia", "vesta", "zeus"]);
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
