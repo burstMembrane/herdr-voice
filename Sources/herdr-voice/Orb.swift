@@ -63,6 +63,8 @@ final class Orb {
         let enabled: Bool
         /// Draw a separator line after this entry.
         var separatorAfter = false
+        /// When non-empty this entry opens a submenu of these choices instead of acting itself.
+        var children: [MenuChoice] = []
         let action: () -> Void
 
         init(title: String, checked: Bool, enabled: Bool, separatorAfter: Bool = false, action: @escaping () -> Void) {
@@ -363,6 +365,20 @@ final class Orb {
                 item.state = choice.checked ? .on : .off
                 item.isEnabled = choice.enabled
                 item.representedObject = ActionBox(choice.action)
+                if !choice.children.isEmpty {
+                    let sub = NSMenu()
+                    sub.autoenablesItems = false
+                    for child in choice.children {
+                        let c = NSMenuItem(title: child.title, action: #selector(choiceChosen(_:)), keyEquivalent: "")
+                        c.target = self
+                        c.state = child.checked ? .on : .off
+                        c.isEnabled = child.enabled
+                        c.representedObject = ActionBox(child.action)
+                        sub.addItem(c)
+                    }
+                    item.submenu = sub
+                    item.action = nil
+                }
                 menu.addItem(item)
                 if choice.separatorAfter { menu.addItem(.separator()) }
             }

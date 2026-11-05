@@ -9,7 +9,7 @@ final class Realtime {
 
     private(set) var provider: Provider
     private var key: String
-    private var voice: String
+    private(set) var voice: String
     private var requestOverride: URLRequest?
     let audio = Audio()
     private var socket: URLSessionWebSocketTask?
@@ -723,6 +723,14 @@ final class Realtime {
         dormant = false
         greetNext = true
         return true
+    }
+
+    /// Changes the voice from the orb's menu: the connection reopens with the new voice and the conversation carries over.
+    func changeVoice(_ newVoice: String) {
+        guard newVoice != voice else { return }
+        voice = newVoice
+        log("♪ voice → \(newVoice)")
+        renewConnection()
     }
 
     func completeProviderSwitch(key newKey: String, request: URLRequest? = nil) {

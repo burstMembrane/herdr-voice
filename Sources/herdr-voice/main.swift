@@ -234,6 +234,14 @@ func voicePaneChoice() -> Orb.MenuChoice? {
 func modelChoices() -> [Orb.MenuChoice] {
     let models = ModelMenu.entries(current: session.provider, hasKey: { $0.apiKey(environment: env) != nil },
                                    localIsBuilt: LocalRuntime.isBuilt(environment: env))
+    var voiceMenu: [Orb.MenuChoice] = []
+    if !session.provider.voices.isEmpty {
+        var entry = Orb.MenuChoice(title: "Voice", checked: false, enabled: true, separatorAfter: true) {}
+        entry.children = session.provider.voices.map { name in
+            Orb.MenuChoice(title: name, checked: name == session.voice, enabled: true) { session.changeVoice(name) }
+        }
+        voiceMenu = [entry]
+    }
     return (voicePaneChoice().map { [$0] } ?? []) + models.map { entry in
         Orb.MenuChoice(title: entry.title, checked: entry.checked, enabled: entry.enabled) {
             let voice = entry.provider.voice(startedWith: startedWith, configured: env["HERDR_VOICE_VOICE"])
@@ -250,7 +258,7 @@ func modelChoices() -> [Orb.MenuChoice] {
             localRuntime.stop()
             session.switchProvider(to: entry.provider, key: found.value, voice: voice)
         }
-    }
+    } + voiceMenu
 }
 let orb = Orb(onClick: { session.toggleMute() }, menuChoices: modelChoices, onQuit: {
     session.shutdown()

@@ -1,11 +1,12 @@
 import Foundation
 
 public enum Provider: String, CaseIterable {
-    case local, openai, grok, gemini
+    case local, openai, grok, gemini, cloudflare
 
     public var url: URL {
         switch self {
         case .local: URL(string: "ws://127.0.0.1:1")!
+        case .cloudflare: URL(string: ProcessInfo.processInfo.environment["HERDR_VOICE_CF_URL"] ?? "ws://127.0.0.1:8799/realtime")!
         case .openai: URL(string: "wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1")!
         case .grok: URL(string: "wss://api.x.ai/v1/realtime?model=grok-voice-latest")!
         case .gemini: URL(string: GeminiLiveWire.endpoint)!
@@ -13,13 +14,14 @@ public enum Provider: String, CaseIterable {
     }
 
     /// As listed in the orb's menu, in this order.
-    public static let menuOrder: [Provider] = [.local, .grok, .openai, .gemini]
+    public static let menuOrder: [Provider] = [.local, .grok, .openai, .gemini, .cloudflare]
     public var menuTitle: String {
         switch self {
         case .local: "Local OpenLive"
         case .grok: "Grok"
         case .openai: "GPT"
         case .gemini: "Gemini"
+        case .cloudflare: "Claude (Cloudflare)"
         }
     }
 
@@ -30,9 +32,18 @@ public enum Provider: String, CaseIterable {
         return defaultVoice
     }
 
+    /// Voices offered in the orb's Voice submenu; empty for providers whose voice is chosen only at start.
+    public var voices: [String] {
+        switch self {
+        case .cloudflare: ["draco", "hyperion", "apollo", "zeus", "saturn", "atlas", "orion", "pluto", "luna", "asteria"]
+        default: []
+        }
+    }
+
     public var keyEnv: String {
         switch self {
         case .local: "HERDR_LOCAL_OPENLIVE_TOKEN"
+        case .cloudflare: "HERDR_VOICE_CF_TOKEN"
         case .openai: "OPENAI_API_KEY"
         case .grok: "XAI_API_KEY"
         case .gemini: "GEMINI_API_KEY"
@@ -43,6 +54,7 @@ public enum Provider: String, CaseIterable {
     public var keyPage: String {
         switch self {
         case .local: ""
+        case .cloudflare: ""
         case .openai: "https://platform.openai.com/api-keys"
         case .grok: "https://console.x.ai"
         case .gemini: "https://aistudio.google.com/apikey"
@@ -53,6 +65,7 @@ public enum Provider: String, CaseIterable {
     public var keyPrefix: String {
         switch self {
         case .local: ""
+        case .cloudflare: ""
         case .openai: "sk-"
         case .grok: "xai-"
         case .gemini: "AIza"
@@ -67,7 +80,7 @@ public enum Provider: String, CaseIterable {
             var request = URLRequest(url: url)
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             return request
-        case .openai, .grok:
+        case .openai, .grok, .cloudflare:
             var request = URLRequest(url: url)
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
             return request
@@ -82,7 +95,7 @@ public enum Provider: String, CaseIterable {
     public func makeWire(environment: [String: String] = ProcessInfo.processInfo.environment) -> Wire {
         switch self {
         case .local: LocalWire()
-        case .openai, .grok: OpenAIRealtimeWire(provider: self)
+        case .openai, .grok, .cloudflare: OpenAIRealtimeWire(provider: self)
         case .gemini: GeminiLiveWire(model: environment["HERDR_VOICE_GEMINI_MODEL"] ?? GeminiLiveWire.defaultModel)
         }
     }
@@ -107,6 +120,7 @@ public enum Provider: String, CaseIterable {
     public var defaultVoice: String {
         switch self {
         case .local: "af_heart"
+        case .cloudflare: "luna"
         case .openai: "marin"
         case .grok: "eve"
         case .gemini: "Kore"
@@ -136,6 +150,12 @@ public enum Provider: String, CaseIterable {
                 ],
                 "tools": tools,
                 "tool_choice": "auto",
+            ] as [String: Any]]
+        case .cloudflare:
+            return ["type": "session.update", "session": [
+                "instructions": instructions,
+                "voice": voice,
+                "tools": tools,
             ] as [String: Any]]
         case .grok:
             tools.append(["type": "web_search"])

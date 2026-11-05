@@ -3,8 +3,8 @@ import Testing
 
 @Test func menuListsLocalGrokGPTGeminiWithTheCurrentOneChecked() {
     let entries = ModelMenu.entries(current: .gemini, hasKey: { _ in true }, localIsBuilt: true)
-    #expect(entries.map(\.title) == ["Local OpenLive", "Grok", "GPT", "Gemini"])
-    #expect(entries.map(\.checked) == [false, false, false, true])
+    #expect(entries.map(\.title) == ["Local OpenLive", "Grok", "GPT", "Gemini", "Claude (Cloudflare)"])
+    #expect(entries.map(\.checked) == [false, false, false, true, false])
     #expect(entries.allSatisfy { $0.enabled })
 }
 
@@ -43,4 +43,9 @@ import Testing
 @Test func theDefaultProviderIsLocalOnceSetUpElseGrok() {
     #expect(Provider.defaultChoice(localIsBuilt: true) == .local)
     #expect(Provider.defaultChoice(localIsBuilt: false) == .grok)
+}
+
+@Test func onlyTheCloudflareProviderOffersAVoiceMenu() {
+    #expect(Provider.cloudflare.voices.contains("hyperion"))
+    #expect(Provider.allCases.filter { !$0.voices.isEmpty } == [.cloudflare])
 }
