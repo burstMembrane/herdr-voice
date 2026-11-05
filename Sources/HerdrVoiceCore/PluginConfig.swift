@@ -34,7 +34,7 @@ public enum PluginConfig {
     # herdr-voice settings. Uncomment a line to use it; restart herdr-voice to apply.
     # API keys don't go here: run `herdr-voice setup` (they're kept in your macOS Keychain).
 
-    # AI model: local, grok, openai or gemini (default: local once it's set up, otherwise grok)
+    # AI model: local, grok, openai, gemini or cloudflare (default: local once it's set up, otherwise grok)
     # HERDR_VOICE_PROVIDER=local
     # Voice: eve, rex, ara, sal, leo (Grok); marin, cedar, ... (OpenAI); Kore, Puck, ... (Gemini)
     # HERDR_VOICE_VOICE=eve

@@ -35,7 +35,7 @@ if args.count > 1 {
         print("""
         herdr-voice                    start the voice (in Herdr: in a pane below this one)
         herdr-voice --here             start it in this pane
-        herdr-voice --provider NAME    use local, grok, openai or gemini (default: local once set up, else grok)
+        herdr-voice --provider NAME    use local, grok, openai, gemini or cloudflare (default: local once set up, else grok)
         herdr-voice stop               stop the running voice
         herdr-voice setup [NAME]       store an API key in the Keychain
         herdr-voice install-command    put herdr-voice on your PATH (~/.local/bin)
@@ -67,7 +67,7 @@ if args.count > 2, args[1] == "local", args[2] == "schemas" {
 if args.count > 1, args[1] == "setup" {
     let name = args.count > 2 ? args[2] : providerName
     guard let provider = Provider(rawValue: name) else {
-        print("unknown provider \(name); use local, grok, openai or gemini")
+        print("unknown provider \(name); use local, grok, openai, gemini or cloudflare")
         exit(2)
     }
     guard provider.requiresAPIKey else {
@@ -139,7 +139,7 @@ if args.contains("--orb-demo") {
 }
 
 guard let provider = Provider(rawValue: providerName) else {
-    FileHandle.standardError.write(Data("unknown provider \(providerName); use local, grok, openai or gemini\n".utf8))
+    FileHandle.standardError.write(Data("unknown provider \(providerName); use local, grok, openai, gemini or cloudflare\n".utf8))
     exit(2)
 }
 // In Herdr, a plain `herdr-voice` opens the voice in its own pane below and gives the shell back.
