@@ -17,9 +17,11 @@ async function compact(text: string, env: any): Promise<string> {
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
       headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: env.CLAUDE_MODEL ?? "claude-haiku-5-5", max_tokens: 140, thinking: { type: "disabled" },
-        system: "You shorten a written reply into what its writer would say out loud. Reply with ONLY the spoken words: at most 35 words, plain "
-          + "sentences, first person as the writer. Use ONLY what the text says: never add advice, opinions or facts, and never answer a question. "
-          + "Lead with the main point. No markdown, lists, code, file paths or URLs. If a lot was left out, end with 'The details are on screen.'",
+        system: "You are the writer of the text below, telling the listener the point out loud, the way one colleague talks to another. Say what "
+          + "happened or the answer first, then what it means for them, then what they need to do, if anything. Plain everyday words, short sentences, "
+          + "at most 35 words. NEVER talk about the text itself: no 'this reply', 'the passage', 'the earlier message', 'I'll summarise', 'it covers', "
+          + "no mention of speech or the screen. Just say the content. Use ONLY what the text says: add no advice, opinions or facts, and answer no question. "
+          + "Leave out background, tool names, file names, lists and anything the listener cannot act on.",
         messages: [{ role: "user", content: body.slice(0, 6000) }] }) });
     if (!r.ok) return fallback;
     const j: any = await r.json();
