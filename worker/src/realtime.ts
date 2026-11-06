@@ -43,7 +43,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   server.accept();
   const send = (o: unknown) => { try { server.send(JSON.stringify(o)); } catch { /* closed */ } };
 
-  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [], silentToolText = false, brainNone = false;
+  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [], silentToolText = false, brainNone = false, compactOn = true;
   let messages: any[] = [];
   let pendingUser: any[] = []; // content blocks waiting for the next turn (tool results, agent reports)
   let gen = 0; // bumps on barge-in / cancel; stale work drops its output
@@ -189,6 +189,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         const s = d.session ?? {};
         instructions = s.instructions ?? instructions; voice = s.voice ?? voice;
         silentToolText = s.silent_tool_text === true;
+        compactOn = s.compact !== false;
         brainNone = s.brain === "none";   // speech in / speech out only: a Claude Code session is the brain (see channel/)
         if (Array.isArray(s.keyterms)) keyterms = s.keyterms.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim().slice(0, 40)).slice(0, 80);
         tools = (s.tools ?? []).filter((t: any) => t.type === "function").map((t: any) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
@@ -202,13 +203,14 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         else if (it.type === "message") pendingUser.push({ type: "text", text: (it.content ?? []).map((c: any) => c.text ?? "").join(" ") });
         break; }
       case "response.create": if (!brainNone) enqueueTurn(); break;
+      case "config": if (typeof d.compact === "boolean") compactOn = d.compact; break;
       case "speak": { // say this text in the voice (brain-less mode); a long text is condensed to a short spoken update first
         const text = String(d.text ?? "").slice(0, 8000).trim();
         if (!text) break;
         const myGen = ++gen, itemId = uid("item_");
         send({ type: "response.created" });
         queue = queue.then(async () => {
-          const spoken = text.length > COMPACT_OVER ? await compact(text, env) : text;
+          const spoken = compactOn && text.length > COMPACT_OVER ? await compact(text, env) : text;
           if (myGen === gen) await speak(spoken, itemId, myGen);
           send({ type: "response.output_audio_transcript.done", transcript: spoken }); send({ type: "response.done" });
         }).catch(() => {});

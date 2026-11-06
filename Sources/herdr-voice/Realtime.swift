@@ -488,6 +488,13 @@ final class Realtime {
         deliver(framing + String(body.prefix(3500)))
     }
 
+    /// Channel mode: turns the condensing of long replies on or off for the open connection.
+    func setCompact(_ on: Bool) {
+        ChannelMode.compact = on
+        log("✎ summarise long replies: \(on ? "on" : "off")")
+        sendRaw(["type": "config", "compact": on])
+    }
+
     /// Channel mode: a Claude Code session asked the voice to say something.
     func speakText(_ session: String, _ text: String) {
         guard status == .live, established else { log("✖ \(session) wants to speak but the voice is not connected"); return }

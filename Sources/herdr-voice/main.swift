@@ -260,7 +260,22 @@ func selectStt(_ engine: Stt) {
     if engine == .wispr { Wispr.start() }
 }
 
+/// Channel mode's orb menu: which session you are talking to, summarising on or off, and the voice.
+func channelChoices() -> [Orb.MenuChoice] {
+    var sessions = Orb.MenuChoice(title: "Talking to", checked: false, enabled: !ChannelHub.shared.sessions.isEmpty, separatorAfter: true) {}
+    sessions.children = ChannelHub.shared.sessions.map { name in
+        Orb.MenuChoice(title: name, checked: name == ChannelHub.shared.targetName, enabled: true) { ChannelHub.shared.select(name) }
+    }
+    let compact = Orb.MenuChoice(title: "Summarise long replies", checked: ChannelMode.compact, enabled: true) { session.setCompact(!ChannelMode.compact) }
+    var voice = Orb.MenuChoice(title: "Voice", checked: false, enabled: true) {}
+    voice.children = session.provider.voices.map { name in
+        Orb.MenuChoice(title: name, checked: name == session.voice, enabled: true) { session.changeVoice(name) }
+    }
+    return [sessions, compact, voice]
+}
+
 func modelChoices() -> [Orb.MenuChoice] {
+    if ChannelMode.on { return channelChoices() }
     let models = ModelMenu.entries(current: session.provider, hasKey: { $0.apiKey(environment: env) != nil },
                                    localIsBuilt: LocalRuntime.isBuilt(environment: env))
     var voiceMenu: [Orb.MenuChoice] = []

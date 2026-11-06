@@ -16,6 +16,13 @@ final class ChannelHub {
     private(set) var target: Int32?
 
     var sessions: [String] { lock.withLock { clients.values.sorted() } }
+    var targetName: String? { lock.withLock { target.flatMap { clients[$0] } } }
+
+    /// Makes the named session the one your speech goes to.
+    func select(_ name: String) {
+        lock.withLock { if let fd = clients.first(where: { $0.value == name })?.key { target = fd } }
+        log("● channel: now talking to \(name)")
+    }
 
     func start() {
         unlink(Self.path)

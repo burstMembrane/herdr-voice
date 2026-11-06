@@ -314,4 +314,8 @@ extension HerdrTools {
 /// Channel mode (HERDR_VOICE_MODE=channel): speech in, speech out; a Claude Code session is the brain (see ChannelHub).
 public enum ChannelMode {
     public static let on = ProcessInfo.processInfo.environment["HERDR_VOICE_MODE"] == "channel"
+    /// Condense long replies into a short spoken update (on by default; switch it in the orb menu).
+    public nonisolated(unsafe) static var compact: Bool = UserDefaults.standard.object(forKey: "compact") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(compact, forKey: "compact") }
+    }
 }
