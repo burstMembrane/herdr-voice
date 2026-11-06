@@ -201,6 +201,12 @@ let session = Realtime(provider: provider, key: key,
 var localActivation = LocalActivation()
 let pmWatcher: PMWatcher? = HerdrTools.pmMode ? PMWatcher { text in DispatchQueue.main.async { session.deliverUpdate(text) } } : nil
 pmWatcher?.start()
+let inbox = TerminalInbox { from, body in
+    // Only the PM's own messages count: another agent's text is never spoken as the PM's.
+    guard HerdrTools.isPM(address: from, run: HerdrTools.herdr) else { return }
+    DispatchQueue.main.async { session.deliverPMMessage(body) }
+}
+if HerdrTools.pmMode { inbox.start() }
 
 /// Loads the local models off the main queue, so the orb shows the warm-up, then opens the session if Local
 /// is still the choice.

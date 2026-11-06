@@ -7,8 +7,10 @@ public final class PMWatcher {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var lastClaimed = ""
     private nonisolated(unsafe) static var outstanding = 0
-    private nonisolated(unsafe) static var minAnswerTurn = 0
     private nonisolated(unsafe) static var askedAt = Date.distantPast
+    private nonisolated(unsafe) static var marker = ""
+    private nonisolated(unsafe) static var viaChannel = false
+    private nonisolated(unsafe) static var quietUntil = Date.distantPast
 
     /// True for the first caller with this reply text; later callers get false.
     static func claim(_ reply: String) -> Bool {
@@ -19,13 +21,28 @@ public final class PMWatcher {
         }
     }
     /// The voice sent the PM a message; the first settled PM turn at or after `minTurn` is the answer.
-    static func askSent(minTurn: Int = 0) {
-        lock.withLock { outstanding += 1; minAnswerTurn = max(minAnswerTurn, minTurn); askedAt = Date() }
+    static func askSent(marker m: String = "", viaChannel channel: Bool = false) {
+        lock.withLock { outstanding += 1; marker = m; askedAt = Date(); viaChannel = channel }
     }
-    static func askAnswered() { lock.withLock { outstanding = 0; minAnswerTurn = 0 } }
+
+    /// A reply arrived on the terminal: true when it answers something the voice asked. Unprompted screen updates stay
+    /// quiet for a little afterwards so the same turn is not spoken twice.
+    static func messageArrived() -> Bool {
+        lock.withLock {
+            let answered = outstanding > 0 && Date().timeIntervalSince(askedAt) < 900
+            outstanding = 0
+            quietUntil = Date().addingTimeInterval(25)
+            return answered
+        }
+    }
+    static func askAnswered() { lock.withLock { outstanding = 0 } }
     /// An ask counts for 15 minutes; after that a silent PM no longer blocks unprompted updates.
     private static var asking: Bool { lock.withLock { outstanding > 0 && Date().timeIntervalSince(askedAt) < 900 } }
-    private static var answerTurn: Int { lock.withLock { minAnswerTurn } }
+    /// Look at the PM's screen for the answer: always when there is no terminal channel, else once 45 s pass without a reply.
+    private static var scraping: Bool { lock.withLock { outstanding > 0 && Date().timeIntervalSince(askedAt) < 900 && (!viaChannel || Date().timeIntervalSince(askedAt) > 45) } }
+    private static var waitingForMessage: Bool { lock.withLock { outstanding > 0 && viaChannel && Date().timeIntervalSince(askedAt) <= 45 } }
+    private static var quiet: Bool { lock.withLock { Date() < quietUntil } }
+    private static var askMarker: String { lock.withLock { marker } }
 
     private let queue = DispatchQueue(label: "herdr-voice.pm-watch", qos: .utility)
     private var timer: DispatchSourceTimer?
@@ -56,11 +73,11 @@ public final class PMWatcher {
         let state = ((obj["status"] as? [String: Any])?["state"] as? String) ?? ""
         guard let seen = lastTurn else { lastTurn = turn; return } // what happened before we started is not news
         guard state != "working" else { return }
-        if Self.asking {
+        if Self.scraping {
             // The voice asked something: its answer is the PM's reply written after our message, whatever the turn count.
             let raw = run(["read", pm, "--lines", "400", "--json"])
             let screen = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["text"] as? String ?? ""
-            guard let reply = HerdrTools.lastReply(screen, after: HerdrTools.voiceTag.trimmingCharacters(in: .whitespaces)) else { return }
+            guard let reply = HerdrTools.lastReply(screen, after: Self.askMarker.isEmpty ? HerdrTools.voiceTag.trimmingCharacters(in: .whitespaces) : Self.askMarker) else { return }
             lastTurn = turn
             pendingTurn = nil
             Self.askAnswered()
@@ -68,6 +85,7 @@ public final class PMWatcher {
             onUpdate("[your own written reply is ready: say it aloud now in the first person, in your own words, two short sentences at most, under 40 words; it is not a message from anyone else]\n" + String(reply.prefix(3500)))
             return
         }
+        guard !Self.waitingForMessage, !Self.quiet else { lastTurn = turn; return }
         guard turn > seen else { return }
         // Unprompted: two quiet looks in a row on the same turn, so a burst of turns is reported once, at its end.
         guard pendingTurn == turn else { pendingTurn = turn; return }

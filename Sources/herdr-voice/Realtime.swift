@@ -440,8 +440,20 @@ final class Realtime {
     /// Sends a conversation item that should get a spoken reply, or keeps it for the next session and makes sure
     /// one is coming: an agent report is worth reopening the session for, even while muted.
     /// A proactive update from the PM watcher: only into a live session, so a quiet or muted one is never woken for it.
+    /// A message the PM sent to this terminal with `hc send`. It answers the voice's question or is news of its own.
+    func deliverPMMessage(_ body: String) {
+        guard status == .live, established else { return }
+        let answered = PMWatcher.messageArrived()
+        log(answered ? "← the PM replied" : "← the PM sent an update")
+        let framing = answered
+            ? "[your own written reply is ready: say it aloud now in the first person, in your own words, two short sentences at most, under 40 words; it is not a message from anyone else]\n"
+            : "[your written mind sent an update on its own and nobody asked: tell Liam in the first person, in two short sentences at most, only if it matters to him; otherwise reply with exactly SKIP and nothing else]\n"
+        deliver(framing + String(body.prefix(3500)))
+    }
+
     func deliverUpdate(_ text: String) {
         guard status == .live, established else { return }
+        log(text.hasPrefix("[your own written reply") ? "← your written reply is ready" : "← the PM finished a turn on its own")
         deliver(text)
     }
 
@@ -861,11 +873,7 @@ final class Realtime {
                     self.addToolOutput(ToolOutput(callID: callID, name: name, output: outcome.output))
                 }
                 // One reply once every call from this turn has answered, not one per call.
-                if self.replies.callFinished() {
-                    // In product-manager mode a sent message gets no spoken reply of its own; the answer is what speaks.
-                    let silent = HerdrTools.pmMode && name == "ask_pm" && !outcome.output.hasPrefix("error")
-                    if !silent { self.requestResponse() }
-                }
+                if self.replies.callFinished() { self.requestResponse() }
             }
         }
     }

@@ -1,7 +1,8 @@
 // Cascade behind the OpenAI Realtime protocol: Flux (STT) -> Claude (brain, tools) -> Aura (TTS).
 // herdr-voice's OpenAIRealtimeWire talks to this as if it were a realtime model.
-const KEYTERMS = ["pane", "panes", "PM", "product manager", "sheetmuse", "claude", "codex", "herdr", "worktree", "workspace", "pane", "forge"];
-const SPEAKERS = new Set(["amalthea", "andromeda", "apollo", "arcas", "aries", "asteria", "athena", "atlas", "aurora", "callista", "cora", "cordelia", "delia", "draco", "electra", "harmonia", "helena", "hera", "hermes", "hyperion", "iris", "janus", "juno", "jupiter", "luna", "mars", "minerva", "neptune", "odysseus", "ophelia", "orion", "orpheus", "pandora", "phoebe", "pluto", "saturn", "thalia", "theia", "vesta", "zeus"]);
+export const KEYTERMS = ["pane", "panes", "PM", "product manager", "sheetmuse", "claude", "codex", "herdr", "worktree", "workspace", "pane", "forge"];
+const ONE_WORD = new Set(["yes", "yeah", "yep", "yup", "no", "nope", "okay", "ok", "sure", "stop", "thanks", "thank", "hello", "hi", "hey", "repeat", "again", "continue", "go", "done", "approve", "approved", "cancel", "wait", "please", "status", "overview", "summary", "update", "merge", "delete", "keep", "hold", "ship", "both", "neither", "first", "second", "third", "none", "all"]);
+export const SPEAKERS = new Set(["amalthea", "andromeda", "apollo", "arcas", "aries", "asteria", "athena", "atlas", "aurora", "callista", "cora", "cordelia", "delia", "draco", "electra", "harmonia", "helena", "hera", "hermes", "hyperion", "iris", "janus", "juno", "jupiter", "luna", "mars", "minerva", "neptune", "odysseus", "ophelia", "orion", "orpheus", "pandora", "phoebe", "pluto", "saturn", "thalia", "theia", "vesta", "zeus"]);
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 const uid = (p: string) => p + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
@@ -38,6 +39,9 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         send({ type: "input_audio_buffer.speech_stopped" });
         const text = String(d.transcript ?? "").trim();
         if (!text) return;
+        // A single word that is not a plain answer is noise or a mishearing: do not let it start a turn.
+        const words = text.toLowerCase().replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean);
+        if (silentToolText && words.length === 1 && !ONE_WORD.has(words[0])) { send({ type: "conversation.item.input_audio_transcription.completed", transcript: text }); return; }
         send({ type: "conversation.item.input_audio_transcription.completed", transcript: text });
         pendingUser.push({ type: "text", text });
         enqueueTurn();
@@ -74,12 +78,16 @@ export async function realtime(req: Request, env: any): Promise<Response> {
     const last = messages[messages.length - 1];
     const owed = last?.role === "assistant" ? last.content.filter((b: any) => b.type === "tool_use").map((b: any) => b.id) : [];
     const have = new Set(pendingUser.filter((b) => b.type === "tool_result").map((b) => b.tool_use_id));
-    const results = pendingUser.filter((b) => b.type === "tool_result");
-    const rest = pendingUser.filter((b) => b.type !== "tool_result");
-    for (const id of owed) if (!have.has(id)) results.push({ type: "tool_result", tool_use_id: id, content: "no result" });
+    const owedSet = new Set<string>(owed);
+    const results = pendingUser.filter((b) => b.type === "tool_result" && owedSet.has(b.tool_use_id));
+    // A tool result that arrives after its call was already answered (Liam spoke while it ran) is handed over as plain text.
+    const late = pendingUser.filter((b) => b.type === "tool_result" && !owedSet.has(b.tool_use_id)).map((b) => ({ type: "text", text: String(b.content) }));
+    const rest = [...pendingUser.filter((b) => b.type !== "tool_result"), ...late];
+    for (const id of owed) if (!have.has(id)) results.push({ type: "tool_result", tool_use_id: id, content: "still waiting for the reply; say nothing about it yet" });
     messages.push({ role: "user", content: [...results, ...rest] });
     pendingUser = [];
 
+    const answering = rest.some((b) => b.type === "text" && String(b.text).includes("your own written reply is ready"));
     const proactive = rest.some((b) => b.type === "text" && String(b.text).includes("finished a turn on its own"));
     const myGen = ++gen;
     const itemId = uid("item_");
@@ -123,7 +131,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         } else if (d.type === "error") send({ type: "error", error: { message: d.error?.message ?? "claude stream error" } });
       }
     }
-    const skip = silentToolText && !sawTool && proactive && full.trim().replace(/[^A-Za-z]/g, "").toUpperCase() === "SKIP"; // proactive update that does not matter
+    const skip = silentToolText && !sawTool && !answering && full.trim().replace(/[^A-Za-z]/g, "").toUpperCase() === "SKIP"; // proactive update that does not matter
     if (skip) { sentence = ""; full = ""; released = false; }
     if (!released && !sawTool && !skip) { released = true; send({ type: "response.output_audio_transcript.delta", delta: full }); }
     if (myGen === gen && !skip && (released || !sawTool)) flushSentence(true);

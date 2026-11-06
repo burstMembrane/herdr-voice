@@ -104,19 +104,20 @@ extension HerdrTools {
                                                      question: "send \(target) this instruction: \(text)", confirmed: confirmed, gate) {
                 return Outcome(output: stop, watch: nil)
             }
-            var minTurn = 0
-            if pmMode, let info = try? JSONSerialization.jsonObject(with: Data(run(["get", target, "--json"]).utf8)) as? [String: Any],
-               let turn = info["turn"] as? Int {
-                let working = ((info["status"] as? [String: Any])?["state"] as? String) == "working"
-                minTurn = turn + (working ? 2 : 1)
-            }
-            let out = run(["send", target, voiceTag + text, "--json"])
+            let me = ProcessInfo.processInfo.environment["HC_TERMINAL_ID"] ?? ""
+            let ask = pmMode && !me.isEmpty
+                ? voiceTag + text + "\n(Reply to this with: hc send \(me) \"<one or two plain spoken sentences, no markdown>\". The voice reads that aloud to Liam. Send further updates there too.)"
+                : voiceTag + text
+            let out = run(["send", target, ask, "--json"])
             if let error = hcError(out) {
                 if error.lowercased().contains("blocked") { return Outcome(output: "\(target) needs approval:\n" + readHc(target, 30, run), watch: nil) }
                 return Outcome(output: "error: " + error, watch: nil)
             }
-            if pmMode { PMWatcher.askSent(minTurn: minTurn) }
-            return Outcome(output: pmMode ? "sent; say nothing until the reply arrives" : "sent; \(target) is working", watch: pmMode ? nil : target)
+            guard pmMode else { return Outcome(output: "sent; \(target) is working", watch: target) }
+            // Product-manager mode: the PM answers by sending a message back to this terminal; it is spoken when it lands.
+            let marker = (voiceTag.trimmingCharacters(in: .whitespaces) + " " + String(text.prefix(20))).trimmingCharacters(in: .whitespaces)
+            PMWatcher.askSent(marker: marker, viaChannel: !(ProcessInfo.processInfo.environment["HC_TERMINAL_ID"] ?? "").isEmpty)
+            return Outcome(output: "sent; say nothing now, the reply will be handed to you when it arrives", watch: nil)
         case "read_agent", "read_pane":
             return Outcome(output: readHc(target, args["lines"] as? Int ?? reportLines, run, preferReply: args["preferReply"] as? Bool ?? false), watch: nil)
         case "answer_agent":
@@ -240,6 +241,29 @@ extension HerdrTools {
         guard let obj = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any], let err = obj["error"] as? [String: Any]
         else { return nil }
         return err["message"] as? String ?? "failed"
+    }
+
+    /// Polls the PM until it has stopped working and written a reply after our message (found by that message's text).
+    static func awaitPMReply(_ pm: String, marker: String, _ run: Runner, timeout: TimeInterval = 150) -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        Thread.sleep(forTimeInterval: 1.0)
+        while Date() < deadline {
+            let info = (try? JSONSerialization.jsonObject(with: Data(run(["get", pm, "--json"]).utf8)) as? [String: Any]) ?? [:]
+            if ((info["status"] as? [String: Any])?["state"] as? String) != "working" {
+                let raw = run(["read", pm, "--lines", "400", "--json"])
+                let screen = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["text"] as? String ?? ""
+                if let reply = lastReply(screen, after: marker) { return reply }
+            }
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        return nil
+    }
+
+    /// True when `address` is the product manager's terminal (it may be known by name or title, so its address is looked up).
+    public static func isPM(address: String, run: Runner) -> Bool {
+        guard let pm = pmTerminal(run) else { return false }
+        if pm == address { return true }
+        return hcAgents(run).contains { $0.address == address && $0.target == pm }
     }
 
     /// Prefixes every message the voice sends, and is how its answer is found on the PM's screen.
