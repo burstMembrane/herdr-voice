@@ -17,7 +17,7 @@ const style = existsSync(styleFile) ? readFileSync(styleFile, 'utf8').trim() : '
 const instructions = [
   'You are the voice of this session. Messages from the voice app arrive as <channel source="herdr-voice" session="...">what the user said</channel>.',
   'The user is SPEAKING to you and hears your final reply read aloud automatically, so write that reply as one or two short, plain spoken',
-  'sentences (under 40 words): no code, no file paths, no markdown, no URLs, no lists. They do not see your text. The words may contain dictation',
+  'sentences (under 40 words): no code, no file paths, no markdown, no URLs, no numbered or bulleted lists, no sign-off or "what I skipped" footers. They do not see your text. The words may contain dictation',
   'slips; map near-sounding words to project terms. Do any work the request needs first, then give the short spoken result. You may call',
   '`speak` for a quick update while you work, but it is optional. If a message is obvious noise you cannot understand, reply with one short word asking them to repeat.',
   style,

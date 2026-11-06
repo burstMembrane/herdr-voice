@@ -17,8 +17,25 @@ origin=$(tail -n 400 "$tp" | jq -s -r '
     else "voice" end')
 [ "$origin" = voice ] || exit 0
 [ -n "$reply" ] || exit 0
-text=$(printf '%s' "$reply" | sed -E 's/```[^`]*```//g; s/`[^`]*`//g; s/\*\*//g; s/\[([^]]*)\]\([^)]*\)/\1/g; s/^[#>*| -]+//; s/\|//g' | tr '\n' ' ' | sed -E 's/  +/ /g')
-text=$(printf '%s' "$text" | cut -c1-"${MAX_CHARS:-240}" | sed -E 's/([.!?]) [^.!?]*$/\1/')
+# Plain spoken text: no markdown, code, links or list markers; the first two sentences plus a closing question, if any.
+text=$(printf '%s' "$reply" | python3 -c '
+import re, sys
+limit = int(sys.argv[1])
+t = sys.stdin.read()
+t = re.sub(r"```.*?```", " ", t, flags=re.S)
+t = re.sub(r"`[^`]*`", " ", t)
+t = t.replace("**", "")
+t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)
+t = re.sub(r"(?m)^\s*(#+|>|[-*|])\s*", "", t)
+t = re.sub(r"(^|\s)\d+[.)]\s+", " ", t)
+t = re.sub(r"\s+", " ", t).strip()
+s = re.split(r"(?<=[.!?])\s+", t)
+out = s[:2]
+if len(s) > 2 and s[-1].endswith("?"):
+    out.append(s[-1])
+r = " ".join(out)
+print(r if len(r) <= limit else r[:limit].rsplit(" ", 1)[0])
+' "${MAX_CHARS:-260}")
 [ ${#text} -ge 2 ] || exit 0
 if [ -n "$DRY_RUN" ]; then echo "WOULD SPEAK: $text"; exit 0; fi
 jq -nc --arg t "$text" '{type:"speak",text:$t}' | nc -U -w 2 "$sock"

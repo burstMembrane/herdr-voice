@@ -199,7 +199,7 @@ let startedWith = provider
 let session = Realtime(provider: provider, key: key,
                        voice: provider.voice(startedWith: startedWith, configured: env["HERDR_VOICE_VOICE"]))
 var localActivation = LocalActivation()
-let pmWatcher: PMWatcher? = HerdrTools.pmMode ? PMWatcher { text in DispatchQueue.main.async { session.deliverUpdate(text) } } : nil
+let pmWatcher: PMWatcher? = HerdrTools.pmMode && !ChannelMode.on ? PMWatcher { text in DispatchQueue.main.async { session.deliverUpdate(text) } } : nil
 pmWatcher?.start()
 Wispr.start()
 if Stt.current == .apple { AppleStt.start { session.deliverSpoken($0) } }
@@ -208,7 +208,7 @@ let inbox = TerminalInbox { from, body in
     guard HerdrTools.isPM(address: from, run: HerdrTools.herdr) else { return }
     DispatchQueue.main.async { session.deliverPMMessage(body) }
 }
-if HerdrTools.pmMode { inbox.start() }
+if HerdrTools.pmMode, !ChannelMode.on { inbox.start() }
 if ChannelMode.on {
     ChannelHub.shared.onSpeak = { name, text in session.speakText(name, text) }
     ChannelHub.shared.start()
