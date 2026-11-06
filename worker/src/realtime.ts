@@ -80,6 +80,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
     messages.push({ role: "user", content: [...results, ...rest] });
     pendingUser = [];
 
+    const proactive = rest.some((b) => b.type === "text" && String(b.text).includes("finished a turn on its own"));
     const myGen = ++gen;
     const itemId = uid("item_");
     send({ type: "response.created" });
@@ -122,7 +123,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         } else if (d.type === "error") send({ type: "error", error: { message: d.error?.message ?? "claude stream error" } });
       }
     }
-    const skip = silentToolText && !sawTool && full.trim().replace(/[^A-Za-z]/g, "").toUpperCase() === "SKIP"; // proactive update that does not matter
+    const skip = silentToolText && !sawTool && proactive && full.trim().replace(/[^A-Za-z]/g, "").toUpperCase() === "SKIP"; // proactive update that does not matter
     if (skip) { sentence = ""; full = ""; released = false; }
     if (!released && !sawTool && !skip) { released = true; send({ type: "response.output_audio_transcript.delta", delta: full }); }
     if (myGen === gen && !skip && (released || !sawTool)) flushSentence(true);

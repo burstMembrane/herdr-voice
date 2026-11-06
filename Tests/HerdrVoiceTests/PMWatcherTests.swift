@@ -31,18 +31,32 @@ private final class FakePM: @unchecked Sendable {
     #expect(updates.count == 1)
 }
 
-@Test func aWorkingPMIsNotReportedAndAnAskedQuestionDefersToItsOwnAnswer() {
+@Test func aReplyToTheVoicesQuestionComesAtOnceAndIsNotSkippable() {
+    PMWatcher.askAnswered()
+    let pm = FakePM()
+    var updates: [String] = []
+    let watcher = PMWatcher(run: pm.run) { updates.append($0) }
+    watcher.tick()                                  // remembers turn 5
+    PMWatcher.askSent(minTurn: 7)
+    pm.turn = 6; pm.screen = "⏺ Watcher test two: a stale monitor turn.\n"
+    watcher.tick()                                  // turn 6 settles but is too early to be the answer
+    #expect(updates.isEmpty)
+    pm.turn = 7; pm.screen = "⏺ Watcher test three: the real answer.\n"
+    watcher.tick()                                  // first settled turn at or after 7: spoken at once
+    #expect(updates.count == 1)
+    #expect(updates[0].contains("the real answer"))
+    #expect(updates[0].contains("your own written reply is ready"))
+    #expect(!updates[0].contains("SKIP"))
+}
+
+@Test func aWorkingPMIsNotReported() {
+    PMWatcher.askAnswered()
     let pm = FakePM()
     var updates: [String] = []
     let watcher = PMWatcher(run: pm.run) { updates.append($0) }
     watcher.tick()
-    pm.turn = 7; pm.state = "working"; pm.screen = "⏺ Watcher test two.\n"
+    pm.turn = 9; pm.state = "working"; pm.screen = "⏺ Watcher test four.\n"
     watcher.tick(); watcher.tick()
-    #expect(updates.isEmpty)
-    pm.state = "done"
-    PMWatcher.askSent()                 // the voice asked something: the settle path will speak the answer
-    watcher.tick(); watcher.tick()
-    PMWatcher.askAnswered()
     #expect(updates.isEmpty)
 }
 }

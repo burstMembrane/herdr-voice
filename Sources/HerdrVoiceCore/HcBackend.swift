@@ -104,13 +104,19 @@ extension HerdrTools {
                                                      question: "send \(target) this instruction: \(text)", confirmed: confirmed, gate) {
                 return Outcome(output: stop, watch: nil)
             }
+            var minTurn = 0
+            if pmMode, let info = try? JSONSerialization.jsonObject(with: Data(run(["get", target, "--json"]).utf8)) as? [String: Any],
+               let turn = info["turn"] as? Int {
+                let working = ((info["status"] as? [String: Any])?["state"] as? String) == "working"
+                minTurn = turn + (working ? 2 : 1)
+            }
             let out = run(["send", target, "[Liam, speaking by voice] " + text, "--json"])
             if let error = hcError(out) {
                 if error.lowercased().contains("blocked") { return Outcome(output: "\(target) needs approval:\n" + readHc(target, 30, run), watch: nil) }
                 return Outcome(output: "error: " + error, watch: nil)
             }
-            if pmMode { PMWatcher.askSent() }
-            return Outcome(output: pmMode ? "sent; say nothing until the reply arrives" : "sent; \(target) is working", watch: target)
+            if pmMode { PMWatcher.askSent(minTurn: minTurn) }
+            return Outcome(output: pmMode ? "sent; say nothing until the reply arrives" : "sent; \(target) is working", watch: pmMode ? nil : target)
         case "read_agent", "read_pane":
             return Outcome(output: readHc(target, args["lines"] as? Int ?? reportLines, run, preferReply: args["preferReply"] as? Bool ?? false), watch: nil)
         case "answer_agent":
