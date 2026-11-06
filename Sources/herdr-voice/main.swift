@@ -209,6 +209,10 @@ let inbox = TerminalInbox { from, body in
     DispatchQueue.main.async { session.deliverPMMessage(body) }
 }
 if HerdrTools.pmMode { inbox.start() }
+if ChannelMode.on {
+    ChannelHub.shared.onSpeak = { name, text in session.speakText(name, text) }
+    ChannelHub.shared.start()
+}
 
 /// Loads the local models off the main queue, so the orb shows the warm-up, then opens the session if Local
 /// is still the choice.

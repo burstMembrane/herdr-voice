@@ -158,6 +158,7 @@ public enum Provider: String, CaseIterable {
                 "tools": tools,
                 "keyterms": Vocabulary.terms(),
                 "silent_tool_text": HerdrTools.pmMode,
+                "brain": ChannelMode.on ? "none" : "claude",
             ] as [String: Any]]
         case .grok:
             tools.append(["type": "web_search"])

@@ -18,7 +18,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   server.accept();
   const send = (o: unknown) => { try { server.send(JSON.stringify(o)); } catch { /* closed */ } };
 
-  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [], silentToolText = false;
+  let instructions = "", tools: any[] = [], voice = "luna", keyterms: string[] = [], silentToolText = false, brainNone = false;
   let messages: any[] = [];
   let pendingUser: any[] = []; // content blocks waiting for the next turn (tool results, agent reports)
   let gen = 0; // bumps on barge-in / cancel; stale work drops its output
@@ -43,6 +43,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         const words = text.toLowerCase().replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean);
         if (silentToolText && words.length === 1 && !ONE_WORD.has(words[0])) { send({ type: "conversation.item.input_audio_transcription.completed", transcript: text }); return; }
         send({ type: "conversation.item.input_audio_transcription.completed", transcript: text });
+        if (brainNone) return;
         pendingUser.push({ type: "text", text });
         enqueueTurn();
       }
@@ -151,6 +152,7 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         const s = d.session ?? {};
         instructions = s.instructions ?? instructions; voice = s.voice ?? voice;
         silentToolText = s.silent_tool_text === true;
+        brainNone = s.brain === "none";   // speech in / speech out only: a Claude Code session is the brain (see channel/)
         if (Array.isArray(s.keyterms)) keyterms = s.keyterms.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim().slice(0, 40)).slice(0, 80);
         tools = (s.tools ?? []).filter((t: any) => t.type === "function").map((t: any) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
         send({ type: "session.updated" });
@@ -162,7 +164,14 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         if (it.type === "function_call_output") pendingUser.push({ type: "tool_result", tool_use_id: it.call_id, content: String(it.output ?? "") });
         else if (it.type === "message") pendingUser.push({ type: "text", text: (it.content ?? []).map((c: any) => c.text ?? "").join(" ") });
         break; }
-      case "response.create": enqueueTurn(); break;
+      case "response.create": if (!brainNone) enqueueTurn(); break;
+      case "speak": { // say this text in the voice (brain-less mode)
+        const text = String(d.text ?? "").slice(0, 2000).trim();
+        if (!text) break;
+        const myGen = ++gen, itemId = uid("item_");
+        send({ type: "response.created" });
+        queue = queue.then(async () => { await speak(text, itemId, myGen); send({ type: "response.output_audio_transcript.done", transcript: text }); send({ type: "response.done" }); }).catch(() => {});
+        break; }
       case "response.cancel": gen++; break;
       default: break; // conversation.item.truncate etc.: nothing to do
     }

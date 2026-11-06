@@ -488,6 +488,13 @@ final class Realtime {
         deliver(framing + String(body.prefix(3500)))
     }
 
+    /// Channel mode: a Claude Code session asked the voice to say something.
+    func speakText(_ session: String, _ text: String) {
+        guard status == .live, established else { log("✖ \(session) wants to speak but the voice is not connected"); return }
+        log("voice (\(session)): \(text.prefix(200))")
+        sendRaw(["type": "speak", "text": text])
+    }
+
     func deliverUpdate(_ text: String) {
         guard status == .live, established else { return }
         log(text.hasPrefix("[your own written reply") ? "← your written reply is ready" : "← the PM finished a turn on its own")
@@ -665,6 +672,10 @@ final class Realtime {
             speechOverlappedPlayback = false
             correctedLeak = false
             // The server may already be answering the "stop" itself; cancel that too.
+            if ChannelMode.on, !StopCommand.matches(t) {
+                if !ChannelHub.shared.transcript(t) { log("✖ no Claude Code session is connected; nobody heard that") }
+                return
+            }
             if StopCommand.matches(t) {
                 stopSpeech(reason: "you said stop")
             } else if provider == .local, replies.wantReply() {

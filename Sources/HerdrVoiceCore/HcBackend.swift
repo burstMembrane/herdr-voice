@@ -68,6 +68,7 @@ extension HerdrTools {
 
     /// What the session offers the model: everything on the old Herdr, only the mapped tools on `hc`.
     public static var activeSchemas: [[String: Any]] {
+        if ChannelMode.on { return [] }   // channel mode: the Claude Code session has the tools, not the voice
         guard hcOnly else { return schemas }
         if pmMode { return pmSchemas }
         return schemas(includeShell: false).filter { hcTools.contains($0["name"] as? String ?? "") }
@@ -308,4 +309,9 @@ extension HerdrTools {
             }
         }
     }
+}
+
+/// Channel mode (HERDR_VOICE_MODE=channel): speech in, speech out; a Claude Code session is the brain (see ChannelHub).
+public enum ChannelMode {
+    public static let on = ProcessInfo.processInfo.environment["HERDR_VOICE_MODE"] == "channel"
 }

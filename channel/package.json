@@ -1,0 +1,1 @@
+{ "name": "herdr-voice-channel", "private": true, "type": "module", "dependencies": { "@modelcontextprotocol/sdk": "^1.12.0" } }
