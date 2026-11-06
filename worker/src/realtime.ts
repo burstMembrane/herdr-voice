@@ -24,6 +24,15 @@ export async function realtime(req: Request, env: any): Promise<Response> {
   let gen = 0; // bumps on barge-in / cancel; stale work drops its output
   let queue: Promise<void> = Promise.resolve();
 
+  let held = "", flushTimer: ReturnType<typeof setTimeout> | undefined;
+  const armFlush = (ms: number) => {
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(() => {
+      const text = held.trim(); held = "";
+      if (text) send({ type: "conversation.item.input_audio_transcription.completed", transcript: text });
+    }, ms);
+  };
+
   // ---- STT: Flux over the AI binding's websocket ----
   // Flux closes itself after a stretch without audio (herdr-voice sends speech only), so it is opened on demand
   // and reopened on the next audio; that must never end the client's session.
@@ -34,14 +43,17 @@ export async function realtime(req: Request, env: any): Promise<Response> {
     ws.accept();
     ws.addEventListener("message", (m) => {
       let d: any; try { d = JSON.parse(String(m.data)); } catch { return; }
-      if (d.event === "StartOfTurn") { gen++; send({ type: "input_audio_buffer.speech_started" }); }
+      if (d.event === "StartOfTurn") { gen++; send({ type: "input_audio_buffer.speech_started" }); if (held) armFlush(4000); }
       if (d.event === "EndOfTurn") {
         send({ type: "input_audio_buffer.speech_stopped" });
         const text = String(d.transcript ?? "").trim();
         if (!text) return;
         // A single word that is not a plain answer is noise or a mishearing: do not let it start a turn.
         const words = text.toLowerCase().replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean);
-        if (silentToolText && words.length === 1 && !ONE_WORD.has(words[0])) { send({ type: "conversation.item.input_audio_transcription.completed", transcript: text }); return; }
+        if ((silentToolText || brainNone) && words.length === 1 && !ONE_WORD.has(words[0])) { if (!brainNone) send({ type: "conversation.item.input_audio_transcription.completed", transcript: text }); return; }
+        // Brain-less mode: hold what was said for a moment and join it with whatever you say next, so a pause in the
+        // middle of a sentence does not hand the session half of it. (A lone noise word was filtered just above.)
+        if (brainNone) { held = held ? `${held} ${text}` : text; armFlush(1100); return; }
         send({ type: "conversation.item.input_audio_transcription.completed", transcript: text });
         if (brainNone) return;
         pendingUser.push({ type: "text", text });
