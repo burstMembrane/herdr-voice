@@ -97,7 +97,7 @@ final class Realtime {
     // Speech-gated streaming. Providers bill per minute of audio, and an always-open mic streams every unmuted
     // minute. Only speech is sent (SpeechGate), and a quiet session is closed and reopened when you next speak.
     // HERDR_VOICE_STREAM=always restores continuous streaming.
-    private let gated = ProcessInfo.processInfo.environment["HERDR_VOICE_STREAM"] != "always"
+    private let gated = Wispr.enabled || ProcessInfo.processInfo.environment["HERDR_VOICE_STREAM"] != "always"
     /// A session with no speech for this long, and nothing speaking or running, is closed until you speak.
     static let quietClose: TimeInterval = 180
     /// How recent the mic's own loud onset must be for the provider's "speech started" to cut the voice off.
@@ -159,6 +159,24 @@ final class Realtime {
         if gated { startQuietTimer() }
     }
 
+    private var wisprHeld = false, wisprRows = -1, wisprPressedAt = Date()
+
+    /// Wispr Flow as the ears (on the mic queue): the gate opening holds its push-to-talk key, closing lets go, and the
+    /// text it saves is handed to the session as what you said. Ignored while the voice is speaking (it would hear itself).
+    private func wisprTurn(opened: Bool, closed: Bool) {
+        if opened, !audio.isSpeaking, status == .live {
+            wisprHeld = true; wisprPressedAt = Date(); Wispr.fn(down: true)
+            DispatchQueue.global().async { self.wisprRows = Wispr.rowCount() }
+        } else if closed, wisprHeld {
+            wisprHeld = false; Wispr.fn(down: false)
+            guard Date().timeIntervalSince(wisprPressedAt) > 0.6 else { return }   // a cough or a click, not a sentence
+            DispatchQueue.global().async {
+                guard let text = Wispr.awaitText(after: self.wisprRows) else { return }
+                DispatchQueue.main.async { self.handle(.userTranscript(text)); self.deliver(text) }
+            }
+        }
+    }
+
     /// On the mic queue, every 20 ms.
     private func micChunk(_ b64: String, level: Float) {
         let (muted, midTurn, local) = micShared.withLock { ($0.muted, $0.midTurn, $0.local) }
@@ -181,6 +199,7 @@ final class Realtime {
         let opened = gate.isOpen && !wasOpen
         let closed = wasOpen && !gate.isOpen
         if gateDebug && useGate { debugMeter(level: rawLevel, opened: opened, closed: closed) }
+        if Wispr.enabled { wisprTurn(opened: opened, closed: closed); return }   // Wispr hears you; no audio goes to the provider
         guard !chunks.isEmpty else { return }
         let stream = { [weak self] (wire: Wire, local: Bool) in
             guard let self else { return }

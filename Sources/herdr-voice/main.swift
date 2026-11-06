@@ -201,6 +201,7 @@ let session = Realtime(provider: provider, key: key,
 var localActivation = LocalActivation()
 let pmWatcher: PMWatcher? = HerdrTools.pmMode ? PMWatcher { text in DispatchQueue.main.async { session.deliverUpdate(text) } } : nil
 pmWatcher?.start()
+Wispr.start()
 let inbox = TerminalInbox { from, body in
     // Only the PM's own messages count: another agent's text is never spoken as the PM's.
     guard HerdrTools.isPM(address: from, run: HerdrTools.herdr) else { return }

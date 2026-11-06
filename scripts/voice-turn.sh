@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code Stop hook for a hands-free voice loop in ONE pane: speak the start of the reply (about 150 characters) in the Cloudflare voice,
-# then open Wispr Flow, listen (macOS speech detection ends the turn), and press Return so the pane gets your words.
+# then ask the PM Voice menu-bar app to listen: it holds Wispr Flow's Fn key while you talk and presses Return after.
 # Runs only in the terminal named in ~/.config/herdr-voice/loop-terminal, and only while that pane is the focused one.
 # Turn it off: delete that file. DRY_RUN=1 prints the plan instead of speaking/listening.
 cfg="$HOME/.config/herdr-voice"
@@ -29,5 +29,9 @@ listen=yes; [ -n "$my_pane" ] && [ "$my_pane" = "$focus" ] || listen=no
 if [ -n "$DRY_RUN" ]; then echo "WOULD SPEAK: $text"; echo "WOULD LISTEN: $listen"; exit 0; fi
 log="$cfg/last-turn.log"; { echo "== $(date +%T) listen=$listen"; } > "$log"
 uvx --from voice-mode voicemode converse --skip-stt "$text" >> "$log" 2>&1
-[ "$listen" = yes ] && "$HOME/.local/bin/pmlisten" --submit --wait 12 --verbose >> "$log" 2>&1
+if [ "$listen" = yes ]; then
+  app="$HOME/.local/share/herdr-voice/PM Voice.app"
+  pgrep -x PMVoice >/dev/null || { open -g "$app"; sleep 2; }   # the menu-bar app owns the mic and key permissions
+  touch "$cfg/listen-now"
+fi
 exit 0
