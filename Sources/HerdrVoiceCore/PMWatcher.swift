@@ -55,26 +55,27 @@ public final class PMWatcher {
               let turn = obj["turn"] as? Int else { return }
         let state = ((obj["status"] as? [String: Any])?["state"] as? String) ?? ""
         guard let seen = lastTurn else { lastTurn = turn; return } // what happened before we started is not news
-        guard state != "working", turn > seen else { return }
-        let asked = Self.asking
-        if asked {
-            // A reply to the voice's question: the first settled turn from the turn the message can be answered in.
-            guard turn >= Self.answerTurn else { lastTurn = turn; return }
-        } else {
-            // Unprompted: two quiet looks in a row on the same turn, so a burst of turns is reported once, at its end.
-            guard pendingTurn == turn else { pendingTurn = turn; return }
+        guard state != "working" else { return }
+        if Self.asking {
+            // The voice asked something: its answer is the PM's reply written after our message, whatever the turn count.
+            let raw = run(["read", pm, "--lines", "400", "--json"])
+            let screen = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["text"] as? String ?? ""
+            guard let reply = HerdrTools.lastReply(screen, after: HerdrTools.voiceTag.trimmingCharacters(in: .whitespaces)) else { return }
+            lastTurn = turn
+            pendingTurn = nil
+            Self.askAnswered()
+            guard Self.claim(reply) else { return }
+            onUpdate("[your own written reply is ready: say it aloud now in the first person, in your own words, two short sentences at most, under 40 words; it is not a message from anyone else]\n" + String(reply.prefix(3500)))
+            return
         }
+        guard turn > seen else { return }
+        // Unprompted: two quiet looks in a row on the same turn, so a burst of turns is reported once, at its end.
+        guard pendingTurn == turn else { pendingTurn = turn; return }
         lastTurn = turn
         pendingTurn = nil
         let raw = run(["read", pm, "--lines", "120", "--json"])
         let screen = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["text"] as? String ?? ""
-        guard let reply = HerdrTools.lastReply(screen), Self.claim(reply) else { if asked { Self.askAnswered() }; return }
-        let body = String(reply.prefix(3500))
-        if asked {
-            Self.askAnswered()
-            onUpdate("[your own written reply is ready: say it aloud now in the first person, in your own words, two short sentences at most, under 40 words; it is not a message from anyone else]\n" + body)
-        } else {
-            onUpdate("[your written mind finished a turn on its own and nobody asked: tell Liam in the first person, in two short sentences at most, only if it matters to him (a decision he must make, something finished, something failed or is blocked); otherwise reply with exactly SKIP and nothing else]\n" + body)
-        }
+        guard let reply = HerdrTools.lastReply(screen), Self.claim(reply) else { return }
+        onUpdate("[your written mind finished a turn on its own and nobody asked: tell Liam in the first person, in two short sentences at most, only if it matters to him (a decision he must make, something finished, something failed or is blocked); otherwise reply with exactly SKIP and nothing else]\n" + String(reply.prefix(3500)))
     }
 }

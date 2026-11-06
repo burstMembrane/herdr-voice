@@ -31,18 +31,18 @@ private final class FakePM: @unchecked Sendable {
     #expect(updates.count == 1)
 }
 
-@Test func aReplyToTheVoicesQuestionComesAtOnceAndIsNotSkippable() {
+@Test func theAnswerIsTheReplyWrittenAfterTheVoicesMessage() {
     PMWatcher.askAnswered()
     let pm = FakePM()
     var updates: [String] = []
     let watcher = PMWatcher(run: pm.run) { updates.append($0) }
     watcher.tick()                                  // remembers turn 5
-    PMWatcher.askSent(minTurn: 7)
-    pm.turn = 6; pm.screen = "⏺ Watcher test two: a stale monitor turn.\n"
-    watcher.tick()                                  // turn 6 settles but is too early to be the answer
+    PMWatcher.askSent()
+    pm.turn = 6; pm.screen = "⏺ Watcher test two: an older monitor reply.\n❯ <hc>[Liam, speaking by voice] what is going on\n"
+    watcher.tick()                                  // our message is on screen but nothing follows it yet
     #expect(updates.isEmpty)
-    pm.turn = 7; pm.screen = "⏺ Watcher test three: the real answer.\n"
-    watcher.tick()                                  // first settled turn at or after 7: spoken at once
+    pm.turn = 7; pm.screen += "⏺ Watcher test three: the real answer.\n✻ Baked for 3s\n❯ \n"
+    watcher.tick()                                  // answered, even though the turn count jumped by one
     #expect(updates.count == 1)
     #expect(updates[0].contains("the real answer"))
     #expect(updates[0].contains("your own written reply is ready"))

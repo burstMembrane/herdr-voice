@@ -110,7 +110,7 @@ extension HerdrTools {
                 let working = ((info["status"] as? [String: Any])?["state"] as? String) == "working"
                 minTurn = turn + (working ? 2 : 1)
             }
-            let out = run(["send", target, "[Liam, speaking by voice] " + text, "--json"])
+            let out = run(["send", target, voiceTag + text, "--json"])
             if let error = hcError(out) {
                 if error.lowercased().contains("blocked") { return Outcome(output: "\(target) needs approval:\n" + readHc(target, 30, run), watch: nil) }
                 return Outcome(output: "error: " + error, watch: nil)
@@ -217,9 +217,15 @@ extension HerdrTools {
 
     /// The agent's last answer on a Claude Code screen: the text after the final "⏺" marker, up to the next prompt or
     /// summary line. Nil when the screen has no such block, so callers fall back to the condensed screen.
-    static func lastReply(_ screen: String) -> String? {
+    static func lastReply(_ screen: String, after marker: String? = nil) -> String? {
         let lines = screen.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
-        guard let start = lines.lastIndex(where: { $0.hasPrefix("⏺") }) else { return nil }
+        var from = 0
+        if let marker {
+            // Only an answer written after our own message counts, however many turns it took to get there.
+            guard let at = lines.lastIndex(where: { $0.contains(marker) }) else { return nil }
+            from = at + 1
+        }
+        guard from < lines.count, let start = lines[from...].lastIndex(where: { $0.hasPrefix("⏺") }) else { return nil }
         var block: [String] = []
         for line in lines[start...] {
             if !block.isEmpty, line.hasPrefix("✻") || line.hasPrefix("❯") || line.hasPrefix("⏺") || line.hasPrefix("※") || line.hasPrefix("─") { break }
@@ -235,6 +241,9 @@ extension HerdrTools {
         else { return nil }
         return err["message"] as? String ?? "failed"
     }
+
+    /// Prefixes every message the voice sends, and is how its answer is found on the PM's screen.
+    static let voiceTag = "[Liam, speaking by voice] "
 
     /// Agents only (terminals with a status), in the shape the old `agent list` gave the model.
     static func trimHcAgents(_ json: String) -> String {
