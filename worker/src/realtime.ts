@@ -5,6 +5,29 @@ const ONE_WORD = new Set(["yes", "yeah", "yep", "yup", "no", "nope", "okay", "ok
 export const SPEAKERS = new Set(["amalthea", "andromeda", "apollo", "arcas", "aries", "asteria", "athena", "atlas", "aurora", "callista", "cora", "cordelia", "delia", "draco", "electra", "harmonia", "helena", "hera", "hermes", "hyperion", "iris", "janus", "juno", "jupiter", "luna", "mars", "minerva", "neptune", "odysseus", "ophelia", "orion", "orpheus", "pandora", "phoebe", "pluto", "saturn", "thalia", "theia", "vesta", "zeus"]);
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const COMPACT_OVER = 320; // characters: up to about three short sentences are spoken as they are
+// Turns a long reply into a short spoken update (Claude Haiku). On any failure, falls back to the first two sentences.
+async function compact(text: string, env: any): Promise<string> {
+  // A closing question to the listener is kept word for word; only the rest is shortened.
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const question = sentences.length > 1 && sentences[sentences.length - 1].endsWith("?") ? sentences[sentences.length - 1] : "";
+  const body = question ? sentences.slice(0, -1).join(" ") : text;
+  const fallback = sentences.slice(0, 2).join(" ").slice(0, COMPACT_OVER);
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: env.CLAUDE_MODEL ?? "claude-haiku-5-5", max_tokens: 140, thinking: { type: "disabled" },
+        system: "You shorten a written reply into what its writer would say out loud. Reply with ONLY the spoken words: at most 35 words, plain "
+          + "sentences, first person as the writer. Use ONLY what the text says: never add advice, opinions or facts, and never answer a question. "
+          + "Lead with the main point. No markdown, lists, code, file paths or URLs. If a lot was left out, end with 'The details are on screen.'",
+        messages: [{ role: "user", content: body.slice(0, 6000) }] }) });
+    if (!r.ok) return fallback;
+    const j: any = await r.json();
+    let out = (j.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join(" ").trim();
+    if (j.stop_reason === "max_tokens") out = out.slice(0, Math.max(out.lastIndexOf("."), out.lastIndexOf("!")) + 1); // never end mid-word
+    return out ? `${out}${question ? " " + question : ""}` : fallback;
+  } catch { return fallback; }
+}
 const uid = (p: string) => p + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 
 export async function realtime(req: Request, env: any): Promise<Response> {
@@ -177,12 +200,16 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         else if (it.type === "message") pendingUser.push({ type: "text", text: (it.content ?? []).map((c: any) => c.text ?? "").join(" ") });
         break; }
       case "response.create": if (!brainNone) enqueueTurn(); break;
-      case "speak": { // say this text in the voice (brain-less mode)
-        const text = String(d.text ?? "").slice(0, 2000).trim();
+      case "speak": { // say this text in the voice (brain-less mode); a long text is condensed to a short spoken update first
+        const text = String(d.text ?? "").slice(0, 8000).trim();
         if (!text) break;
         const myGen = ++gen, itemId = uid("item_");
         send({ type: "response.created" });
-        queue = queue.then(async () => { await speak(text, itemId, myGen); send({ type: "response.output_audio_transcript.done", transcript: text }); send({ type: "response.done" }); }).catch(() => {});
+        queue = queue.then(async () => {
+          const spoken = text.length > COMPACT_OVER ? await compact(text, env) : text;
+          if (myGen === gen) await speak(spoken, itemId, myGen);
+          send({ type: "response.output_audio_transcript.done", transcript: spoken }); send({ type: "response.done" });
+        }).catch(() => {});
         break; }
       case "response.cancel": gen++; break;
       default: break; // conversation.item.truncate etc.: nothing to do

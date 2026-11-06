@@ -18,7 +18,7 @@ origin=$(tail -n 400 "$tp" | jq -s -r '
 [ "$origin" = voice ] || exit 0
 [ -n "$reply" ] || exit 0
 # Plain spoken text: no markdown, code, links or list markers, and no "What I skipped" sign-off. The whole reply is
-# spoken, up to MAX_CHARS (cut at a sentence end).
+# sent in full (up to MAX_CHARS); the Worker speaks a short reply as it is and condenses a long one first.
 text=$(printf '%s' "$reply" | python3 -c '
 import re, sys
 limit = int(sys.argv[1])
@@ -36,7 +36,7 @@ if len(t) > limit:
     cut = max(t.rfind(". "), t.rfind("? "), t.rfind("! "))
     t = t[:cut + 1] if cut > limit // 2 else t.rsplit(" ", 1)[0]
 print(t)
-' "${MAX_CHARS:-1500}")
+' "${MAX_CHARS:-6000}")
 [ ${#text} -ge 2 ] || exit 0
 if [ -n "$DRY_RUN" ]; then echo "WOULD SPEAK: $text"; exit 0; fi
 jq -nc --arg t "$text" '{type:"speak",text:$t}' | nc -U -w 2 "$sock"
