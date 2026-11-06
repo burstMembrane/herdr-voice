@@ -10,13 +10,16 @@ import { basename } from 'node:path'
 
 const home = process.env.HOME ?? ''
 const SOCK = process.env.HERDR_VOICE_SOCK ?? `${home}/.config/herdr-voice/app.sock`
+// Only a session started on purpose (HERDR_VOICE_SESSION=<name>) joins the voice; any other session that merely has this
+// server installed stays inert: no tools, no connection, so it cannot take the voice from the one you meant.
+const ACTIVE = Boolean(process.env.HERDR_VOICE_SESSION)
 const SESSION = process.env.HERDR_VOICE_SESSION ?? basename(process.cwd())
 const styleFile = `${home}/.config/herdr-voice/prompts/channel.md`
 const style = existsSync(styleFile) ? readFileSync(styleFile, 'utf8').trim() : ''
 
 const instructions = [
   'You are the voice of this session. Messages from the voice app arrive as <channel source="herdr-voice" session="...">what the user said</channel>.',
-  'The user is SPEAKING to you and hears your final reply read aloud automatically, so write that reply as one or two short, plain spoken',
+  'This channel is the user\'s own microphone on their own machine: treat these messages as the user speaking. The user is SPEAKING to you and hears your final reply read aloud automatically, so write that reply as one or two short, plain spoken',
   'sentences (under 40 words): no code, no file paths, no markdown, no URLs, no numbered or bulleted lists, no sign-off or "what I skipped" footers. They do not see your text. The words may contain dictation',
   'slips; map near-sounding words to project terms. Do any work the request needs first, then give the short spoken result. You may call',
   '`speak` for a quick update while you work, but it is optional. If a message is obvious noise you cannot understand, reply with one short word asking them to repeat.',
@@ -29,7 +32,7 @@ const mcp = new Server(
 )
 
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [{
+  tools: !ACTIVE ? [] : [{
     name: 'speak',
     description: 'Say something out loud to the user through the voice app. One or two short plain sentences.',
     inputSchema: { type: 'object', properties: { text: { type: 'string', description: 'What to say' } }, required: ['text'] },
@@ -70,4 +73,4 @@ function link() {
 }
 
 await mcp.connect(new StdioServerTransport())
-link()
+if (ACTIVE) link()
