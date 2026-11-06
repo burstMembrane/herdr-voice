@@ -202,6 +202,7 @@ var localActivation = LocalActivation()
 let pmWatcher: PMWatcher? = HerdrTools.pmMode ? PMWatcher { text in DispatchQueue.main.async { session.deliverUpdate(text) } } : nil
 pmWatcher?.start()
 Wispr.start()
+if Stt.current == .apple { AppleStt.start { session.deliverSpoken($0) } }
 let inbox = TerminalInbox { from, body in
     // Only the PM's own messages count: another agent's text is never spoken as the PM's.
     guard HerdrTools.isPM(address: from, run: HerdrTools.herdr) else { return }
@@ -246,6 +247,15 @@ func voicePaneChoice() -> Orb.MenuChoice? {
     return Orb.MenuChoice(title: "Hide voice pane", checked: false, enabled: true, separatorAfter: true) { hideVoicePane(me) }
 }
 
+/// Switches the speech-to-text engine from the orb's menu; no reconnect is needed.
+func selectStt(_ engine: Stt) {
+    guard engine != Stt.current else { return }
+    Stt.current = engine
+    log("✎ speech-to-text → \(engine.title)")
+    if engine == .apple { AppleStt.start { session.deliverSpoken($0) } } else { AppleStt.stop() }
+    if engine == .wispr { Wispr.start() }
+}
+
 func modelChoices() -> [Orb.MenuChoice] {
     let models = ModelMenu.entries(current: session.provider, hasKey: { $0.apiKey(environment: env) != nil },
                                    localIsBuilt: LocalRuntime.isBuilt(environment: env))
@@ -256,6 +266,10 @@ func modelChoices() -> [Orb.MenuChoice] {
             Orb.MenuChoice(title: name, checked: name == session.voice, enabled: true) { session.changeVoice(name) }
         }
         voiceMenu = [entry]
+    }
+    var sttMenu = Orb.MenuChoice(title: "Speech-to-text", checked: false, enabled: true, separatorAfter: true) {}
+    sttMenu.children = Stt.allCases.map { e in
+        Orb.MenuChoice(title: e.title, checked: e == Stt.current, enabled: true) { selectStt(e) }
     }
     var promptMenu: [Orb.MenuChoice] = []
     let prompts = PromptLibrary.names()
@@ -286,7 +300,7 @@ func modelChoices() -> [Orb.MenuChoice] {
             localRuntime.stop()
             session.switchProvider(to: entry.provider, key: found.value, voice: voice)
         }
-    } + voiceMenu + promptMenu
+    } + [sttMenu] + voiceMenu + promptMenu
 }
 let orb = Orb(onClick: { session.toggleMute() }, menuChoices: modelChoices, onQuit: {
     session.shutdown()
@@ -306,6 +320,7 @@ if env["HERDR_VOICE_ORB_PIN"] != "0" {
 
 // Esc is grabbed only while the assistant is audible, switched on playback start/stop rather than polled.
 session.audio.onSpeakingChanged = { speaking in
+    session.setSpeaking(speaking)
     Hotkey.setStopKey(active: speaking) { session.stopSpeech(reason: "Esc") }
 }
 

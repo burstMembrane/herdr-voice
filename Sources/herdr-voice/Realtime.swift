@@ -97,7 +97,7 @@ final class Realtime {
     // Speech-gated streaming. Providers bill per minute of audio, and an always-open mic streams every unmuted
     // minute. Only speech is sent (SpeechGate), and a quiet session is closed and reopened when you next speak.
     // HERDR_VOICE_STREAM=always restores continuous streaming.
-    private let gated = Wispr.enabled || ProcessInfo.processInfo.environment["HERDR_VOICE_STREAM"] != "always"
+    private var gated: Bool { Stt.current != .cloudflare || ProcessInfo.processInfo.environment["HERDR_VOICE_STREAM"] != "always" }
     /// A session with no speech for this long, and nothing speaking or running, is closed until you speak.
     static let quietClose: TimeInterval = 180
     /// How recent the mic's own loud onset must be for the provider's "speech started" to cut the voice off.
@@ -120,6 +120,8 @@ final class Realtime {
         /// The provider has heard speech start and not yet end: keep streaming so it sees the turn finish.
         var midTurn = false
         var lastSpeech = Date()
+        /// The assistant is audible (set from the main queue, read on the mic queue).
+        var speaking = false
         /// Speech captured while the session was closed or reopening, sent once it's up (at most 10 s).
         var held = HeldMicAudio()
         /// The current connection's wire, for encoding audio on the mic queue.
@@ -159,13 +161,26 @@ final class Realtime {
         if gated { startQuietTimer() }
     }
 
+    /// Text from a speech-to-text engine that is not the provider: shown as what you said and sent as your turn.
+    func deliverSpoken(_ text: String) {
+        guard status == .live, established, !audio.isSpeaking else { return }
+        handle(.userTranscript(text)); deliver(text)
+    }
+
+    /// Called when the assistant starts or stops being audible. The flag file tells the AppleSTT helper to ignore the voice.
+    func setSpeaking(_ on: Bool) {
+        micShared.withLock { $0.speaking = on }
+        let flag = NSHomeDirectory() + "/.config/herdr-voice/speaking"
+        if on { FileManager.default.createFile(atPath: flag, contents: nil) } else { try? FileManager.default.removeItem(atPath: flag) }
+    }
+
     private var wisprHeld = false, wisprRows = -1, wisprPressedAt = Date()
 
     /// Wispr Flow as the ears (on the mic queue): the gate opening holds its push-to-talk key, closing lets go, and the
     /// text it saves is handed to the session as what you said. Ignored while the voice is speaking (it would hear itself).
     private func wisprTurn(opened: Bool, closed: Bool) {
-        if opened, audio.isSpeaking { log("◌ wispr: heard you while the voice was speaking; ignored") }
-        if opened, !audio.isSpeaking, status == .live {
+        if opened, micShared.withLock({ $0.speaking }) { log("◌ wispr: heard you while the voice was speaking; ignored") }
+        if opened, !micShared.withLock({ $0.speaking }), status == .live {
             wisprHeld = true; wisprPressedAt = Date(); Wispr.fn(down: true); log("◌ wispr: you started speaking, holding Fn")
             DispatchQueue.global().async { self.wisprRows = Wispr.rowCount() }
         } else if closed, wisprHeld {
@@ -174,7 +189,7 @@ final class Realtime {
             log("◌ wispr: you stopped, waiting for the text")   // a cough or a click, not a sentence
             DispatchQueue.global().async {
                 guard let text = Wispr.awaitText(after: self.wisprRows) else { log("◌ wispr: no text arrived (is Wispr on, and is Accessibility allowed for this terminal?)"); return }
-                DispatchQueue.main.async { self.handle(.userTranscript(text)); self.deliver(text) }
+                DispatchQueue.main.async { self.deliverSpoken(text) }
             }
         }
     }
@@ -201,7 +216,8 @@ final class Realtime {
         let opened = gate.isOpen && !wasOpen
         let closed = wasOpen && !gate.isOpen
         if gateDebug && useGate { debugMeter(level: rawLevel, opened: opened, closed: closed) }
-        if Wispr.enabled { wisprTurn(opened: opened, closed: closed); return }   // Wispr hears you; no audio goes to the provider
+        if Stt.current == .wispr { wisprTurn(opened: opened, closed: closed); return }   // Wispr hears you; no audio goes to the provider
+        if Stt.current == .apple { return }                                              // the AppleSTT helper hears you
         guard !chunks.isEmpty else { return }
         let stream = { [weak self] (wire: Wire, local: Bool) in
             guard let self else { return }

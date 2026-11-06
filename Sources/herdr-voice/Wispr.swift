@@ -4,7 +4,7 @@ import Foundation
 /// Wispr Flow as the speech-to-text engine: the gate's open/close hold and release its push-to-talk key (Fn), and the
 /// text comes from Wispr's local history database (it has no API). Needs Accessibility to press Fn.
 enum Wispr {
-    static let enabled = ProcessInfo.processInfo.environment["HERDR_VOICE_STT"] == "wispr"
+    static var enabled: Bool { Stt.current == .wispr }
     static let db = NSHomeDirectory() + "/Library/Application Support/Wispr Flow/flow.sqlite"
 
     static func start() {
