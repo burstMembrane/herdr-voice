@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import HerdrVoiceCore
 
 /// Mic capture and playback on one engine with Apple voice processing,
@@ -25,8 +26,8 @@ final class Audio {
     }
 
     static let rate = 24000.0
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
+    private var engine = AVAudioEngine()
+    private var player = AVAudioPlayerNode()
     private let pcm24k = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: rate, channels: 1, interleaved: true)!
     private let float24k = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
     private var converter: AVAudioConverter?
@@ -54,6 +55,10 @@ final class Audio {
             input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
         }
 
+        if let uid = Audio.chosenInputUID, let device = Audio.inputDevices().first(where: { $0.uid == uid })?.id, let unit = input.audioUnit {
+            var id = device
+            AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, UInt32(MemoryLayout<AudioDeviceID>.size))
+        }
         let inFormat = input.outputFormat(forBus: 0)
         let monoIn = AVAudioFormat(standardFormatWithSampleRate: inFormat.sampleRate, channels: 1)!
         converter = AVAudioConverter(from: monoIn, to: pcm24k)
@@ -82,6 +87,69 @@ final class Audio {
         }
         try engine.start()
         player.play()
+    }
+
+    // MARK: input device
+
+    struct InputDevice { let id: AudioDeviceID; let uid: String; let name: String }
+
+    /// The microphone to use (its CoreAudio UID), or nil for the system default. Remembered across runs.
+    static var chosenInputUID: String? {
+        get { UserDefaults.standard.string(forKey: "micUID").flatMap { $0.isEmpty ? nil : $0 } }
+        set { UserDefaults.standard.set(newValue ?? "", forKey: "micUID") }
+    }
+
+    private static func string(_ device: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value) == noErr, let cf = value?.takeRetainedValue() else { return nil }
+        return cf as String
+    }
+
+    /// Every device that can record, by name.
+    static func inputDevices() -> [InputDevice] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            var cfg = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+            var cfgSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &cfg, 0, nil, &cfgSize) == noErr, cfgSize > 0 else { return nil }
+            let list = UnsafeMutableRawPointer.allocate(byteCount: Int(cfgSize), alignment: MemoryLayout<AudioBufferList>.alignment)
+            defer { list.deallocate() }
+            guard AudioObjectGetPropertyData(id, &cfg, 0, nil, &cfgSize, list) == noErr else { return nil }
+            let channels = UnsafeMutableAudioBufferListPointer(list.assumingMemoryBound(to: AudioBufferList.self)).reduce(0) { $0 + Int($1.mNumberChannels) }
+            guard channels > 0, let uid = string(id, kAudioDevicePropertyDeviceUID), let name = string(id, kAudioObjectPropertyName) else { return nil }
+            return InputDevice(id: id, uid: uid, name: name)
+        }
+    }
+
+    /// Name of the system's default microphone, for the menu.
+    static func defaultInputName() -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id) == noErr else { return nil }
+        return string(id, kAudioObjectPropertyName)
+    }
+
+    /// Switches microphone (nil: the system default): the audio engine is rebuilt on the new device.
+    func switchInput(_ uid: String?) throws {
+        Audio.chosenInputUID = uid
+        chunker?.cancel(); chunker = nil
+        player.removeTap(onBus: 0)
+        player.stop()
+        engine.stop()
+        playback = PlaybackLedger()
+        generation += 1
+        outLevel = 0
+        micLevel = 0
+        engine = AVAudioEngine()
+        player = AVAudioPlayerNode()
+        try start()
     }
 
     /// Drains every complete 20 ms chunk from the ring. Checking every 10 ms keeps the added delay under ~10 ms;

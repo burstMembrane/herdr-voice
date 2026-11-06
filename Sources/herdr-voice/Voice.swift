@@ -339,6 +339,13 @@ final class Voice {
         sendRaw(["type": "config", "compact": on])
     }
 
+    /// Uses another microphone (nil: the system default). The audio engine restarts; the speech gate re-learns the noise.
+    func switchMic(_ uid: String?) {
+        log("🎙  microphone → \(uid.flatMap { u in Audio.inputDevices().first { $0.uid == u }?.name } ?? "system default")")
+        do { try audio.switchInput(uid) } catch { log("✖ microphone: \(error.localizedDescription)") }
+        micShared.withLock { $0.midTurn = false }
+    }
+
     /// Called when the voice starts or stops being audible (mic side uses it to ignore the voice).
     func setSpeaking(_ on: Bool) {
         micShared.withLock { $0.speaking = on }

@@ -73,7 +73,12 @@ func menuChoices() -> [Orb.MenuChoice] {
     voice.children = provider.voices.map { name in
         Orb.MenuChoice(title: name, checked: name == session.voice, enabled: true) { session.changeVoice(name) }
     }
-    return [sessions, compact, voice]
+    var mic = Orb.MenuChoice(title: "Microphone", checked: false, enabled: true, separatorAfter: true) {}
+    let chosen = Audio.chosenInputUID
+    let devices = Audio.inputDevices()
+    mic.children = [Orb.MenuChoice(title: "System default" + (Audio.defaultInputName().map { " (\($0))" } ?? ""), checked: chosen == nil || !devices.contains { $0.uid == chosen }, enabled: true) { session.switchMic(nil) }]
+        + devices.map { d in Orb.MenuChoice(title: d.name, checked: d.uid == chosen, enabled: true) { session.switchMic(d.uid) } }
+    return [sessions, mic, compact, voice]
 }
 
 let orb = Orb(onClick: { session.toggleMute() }, menuChoices: menuChoices, onQuit: {
