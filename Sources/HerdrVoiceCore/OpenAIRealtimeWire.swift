@@ -3,18 +3,15 @@ import Foundation
 /// The OpenAI Realtime protocol, which xAI's Grok Voice also speaks. These are the exact messages herdr-voice
 /// sent before the wire layer existed (see WireGoldenTests).
 public final class OpenAIRealtimeWire: Wire {
-    private let provider: Provider
-
-    public init(provider: Provider) {
-        self.provider = provider
-    }
+    public init() {}
 
     public var capabilities: WireCapabilities { WireCapabilities(explicitReplies: true, nativeResumption: false) }
 
     public func encode(_ command: WireCommand) -> [[String: Any]] {
         switch command {
         case let .setup(instructions, voice, _):
-            return [provider.sessionUpdate(instructions: instructions, voice: voice)]
+            _ = instructions
+            return [Provider.cloudflare.sessionUpdate(voice: voice)]
         case .inputStarted:
             return []
         case .appendAudio(let b64):

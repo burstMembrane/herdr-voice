@@ -126,25 +126,4 @@ public struct SpeechGate<Chunk> {
 
 /// Local mode starts a new turn, and cancels the reply, whenever the gate opens. Echo cancellation still leaks some of
 /// the voice's own playback into the mic, so while it plays only input louder than `ratio` × playback counts as speech.
-/// Quieter input is reported at the noise floor, which leaves the floor estimate where it was.
-public enum EchoGuard {
-    /// Measured echo on a MacBook's speakers was 3–13% of the playback level; twice the worst of that.
-    public static let defaultRatio: Float = 0.25
 
-    /// HERDR_VOICE_LOCAL_ECHO_RATIO tunes it: raise it if the voice still cuts itself off, lower it if talking
-    /// over the voice doesn't interrupt it.
-    public static func ratio(environment: [String: String]) -> Float {
-        guard let value = environment["HERDR_VOICE_LOCAL_ECHO_RATIO"].flatMap(Float.init), value >= 0 else { return defaultRatio }
-        return value
-    }
-
-    /// The playback level to guard against, per 20 ms chunk: echo and room reverb outlast a drop in playback, so it
-    /// fades (about 60 dB over 0.8 s) instead of following playback down.
-    public static func reference(previous: Float, playback: Float) -> Float {
-        max(playback, previous * 0.85)
-    }
-
-    public static func level(_ level: Float, playback: Float, floor: Float, ratio: Float = defaultRatio) -> Float {
-        level < playback * ratio ? min(level, floor) : level
-    }
-}

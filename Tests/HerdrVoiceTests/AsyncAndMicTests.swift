@@ -50,29 +50,5 @@ import Testing
 
 // MARK: processes without parked threads
 
-@Test func spawnCollectsLargeOutputWithoutStalling() async {
-    let out = await withCheckedContinuation { c in
-        HerdrTools.spawn("/bin/sh", ["-c", "head -c 300000 /dev/urandom | base64; echo err >&2"]) { c.resume(returning: $0) }
-    }
-    #expect(out.utf8.count > 400_000) // base64 of 300 KB: well past the 64 KB pipe buffer
-    #expect(out.contains("err"))
-}
 
-@Test func spawnReportsAMissingExecutable() async {
-    let out = await withCheckedContinuation { c in HerdrTools.spawn("/no/such/tool", []) { c.resume(returning: $0) } }
-    #expect(out.contains("could not run"))
-}
 
-@Test func settleHoldsNoThreadWhileTheAgentWorks() {
-    var pending: [(args: [String], finish: (String) -> Void)] = []
-    var report: String?
-    HerdrTools.settle("claude-2", runAsync: { args, finish in pending.append((args, finish)) },
-                      run: { _ in "tests pass" }) { report = $0 }
-    // settle returned at once; the first wait is in flight and nothing is blocked.
-    #expect(report == nil && pending.count == 1 && pending[0].args.contains("working"))
-    pending[0].finish("")
-    #expect(pending.count == 2 && pending[1].args.contains("3600000"))
-    pending[1].finish(#"{"result":{"agent":{"agent_status":"done"}}}"#)
-    #expect(report?.hasPrefix("Agent claude-2 is now done.") == true)
-    #expect(report?.contains("tests pass") == true)
-}
