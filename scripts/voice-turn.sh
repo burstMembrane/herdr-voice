@@ -27,6 +27,7 @@ focus=$(herdr-app status | jq -r '.focused_pane')
 listen=yes; [ -n "$my_pane" ] && [ "$my_pane" = "$focus" ] || listen=no
 
 if [ -n "$DRY_RUN" ]; then echo "WOULD SPEAK: $text"; echo "WOULD LISTEN: $listen"; exit 0; fi
-uvx --from voice-mode voicemode converse --skip-stt "$text" >/dev/null 2>&1
-[ "$listen" = yes ] && "$HOME/.local/bin/pmlisten" --submit --wait 10 >/dev/null 2>&1
+log="$cfg/last-turn.log"; { echo "== $(date +%T) listen=$listen"; } > "$log"
+uvx --from voice-mode voicemode converse --skip-stt "$text" >> "$log" 2>&1
+[ "$listen" = yes ] && "$HOME/.local/bin/pmlisten" --submit --wait 10 >> "$log" 2>&1
 exit 0

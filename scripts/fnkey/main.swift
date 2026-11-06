@@ -1,6 +1,7 @@
 // fnkey: presses the Fn key (Wispr Flow's push-to-talk) from a script.
 //   fnkey hold <seconds>   press Fn, hold, release (push-to-talk for that long)
-//   fnkey toggle           Fn+Space tap (Wispr's hands-free toggle, per its config)
+//   fnkey tap | double     one Fn tap (ends hands-free) | double-tap (starts hands-free)
+//   fnkey toggle           Fn+Space tap (not Wispr's hands-free gesture; kept for experiments)
 // Needs Accessibility permission for the app that runs it (System Settings > Privacy & Security > Accessibility).
 import ApplicationServices
 import Foundation
@@ -23,6 +24,10 @@ case "hold":
     post(fn, down: true, flags: .maskSecondaryFn, modifier: true)
     Thread.sleep(forTimeInterval: secs)
     post(fn, down: false, flags: [], modifier: true)
+case "tap":
+    post(fn, down: true, flags: .maskSecondaryFn, modifier: true); Thread.sleep(forTimeInterval: 0.06); post(fn, down: false, flags: [], modifier: true)
+case "double":
+    for _ in 0..<2 { post(fn, down: true, flags: .maskSecondaryFn, modifier: true); Thread.sleep(forTimeInterval: 0.06); post(fn, down: false, flags: [], modifier: true); Thread.sleep(forTimeInterval: 0.12) }
 case "toggle":
     post(fn, down: true, flags: .maskSecondaryFn, modifier: true)
     Thread.sleep(forTimeInterval: 0.08)
