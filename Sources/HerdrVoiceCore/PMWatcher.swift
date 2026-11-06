@@ -27,7 +27,7 @@ public final class PMWatcher {
 
     /// A reply arrived on the terminal: true when it answers something the voice asked. Unprompted screen updates stay
     /// quiet for a little afterwards so the same turn is not spoken twice.
-    static func messageArrived() -> Bool {
+    public static func messageArrived() -> Bool {
         lock.withLock {
             let answered = outstanding > 0 && Date().timeIntervalSince(askedAt) < 900
             outstanding = 0
