@@ -15,12 +15,11 @@ const styleFile = `${home}/.config/herdr-voice/prompts/channel.md`
 const style = existsSync(styleFile) ? readFileSync(styleFile, 'utf8').trim() : ''
 
 const instructions = [
-  'Messages from the voice app arrive as <channel source="herdr-voice" session="...">what the user said</channel>.',
-  'The user is speaking to you out loud and hears you through a text-to-speech voice. Treat each message as their words,',
-  'possibly with dictation slips (map near-sounding words to project terms). Do your work as usual.',
-  'To answer out loud, call the `speak` tool with one or two short, plain spoken sentences (under 40 words, no code, no file paths,',
-  'no markdown, no URLs). Speak when you have the answer or a decision to ask; stay silent for routine steps. Your normal text',
-  'output is NOT spoken. If a message is clearly noise or a mishearing you cannot map to anything, ignore it.',
+  'You are the voice of this session. Messages from the voice app arrive as <channel source="herdr-voice" session="...">what the user said</channel>.',
+  'The user is SPEAKING to you and hears your final reply read aloud automatically, so write that reply as one or two short, plain spoken',
+  'sentences (under 40 words): no code, no file paths, no markdown, no URLs, no lists. They do not see your text. The words may contain dictation',
+  'slips; map near-sounding words to project terms. Do any work the request needs first, then give the short spoken result. You may call',
+  '`speak` for a quick update while you work, but it is optional. If a message is obvious noise you cannot understand, reply with one short word asking them to repeat.',
   style,
 ].filter(Boolean).join('\n')
 
