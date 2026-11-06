@@ -164,14 +164,16 @@ final class Realtime {
     /// Wispr Flow as the ears (on the mic queue): the gate opening holds its push-to-talk key, closing lets go, and the
     /// text it saves is handed to the session as what you said. Ignored while the voice is speaking (it would hear itself).
     private func wisprTurn(opened: Bool, closed: Bool) {
+        if opened, audio.isSpeaking { log("◌ wispr: heard you while the voice was speaking; ignored") }
         if opened, !audio.isSpeaking, status == .live {
-            wisprHeld = true; wisprPressedAt = Date(); Wispr.fn(down: true)
+            wisprHeld = true; wisprPressedAt = Date(); Wispr.fn(down: true); log("◌ wispr: you started speaking, holding Fn")
             DispatchQueue.global().async { self.wisprRows = Wispr.rowCount() }
         } else if closed, wisprHeld {
             wisprHeld = false; Wispr.fn(down: false)
-            guard Date().timeIntervalSince(wisprPressedAt) > 0.6 else { return }   // a cough or a click, not a sentence
+            guard Date().timeIntervalSince(wisprPressedAt) > 0.6 else { log("◌ wispr: too short, ignored"); return }
+            log("◌ wispr: you stopped, waiting for the text")   // a cough or a click, not a sentence
             DispatchQueue.global().async {
-                guard let text = Wispr.awaitText(after: self.wisprRows) else { return }
+                guard let text = Wispr.awaitText(after: self.wisprRows) else { log("◌ wispr: no text arrived (is Wispr on, and is Accessibility allowed for this terminal?)"); return }
                 DispatchQueue.main.async { self.handle(.userTranscript(text)); self.deliver(text) }
             }
         }
