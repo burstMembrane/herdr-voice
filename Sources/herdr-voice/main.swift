@@ -199,6 +199,8 @@ let startedWith = provider
 let session = Realtime(provider: provider, key: key,
                        voice: provider.voice(startedWith: startedWith, configured: env["HERDR_VOICE_VOICE"]))
 var localActivation = LocalActivation()
+let pmWatcher: PMWatcher? = HerdrTools.pmMode ? PMWatcher { text in DispatchQueue.main.async { session.deliverUpdate(text) } } : nil
+pmWatcher?.start()
 
 /// Loads the local models off the main queue, so the orb shows the warm-up, then opens the session if Local
 /// is still the choice.

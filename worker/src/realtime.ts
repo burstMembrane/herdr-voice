@@ -122,8 +122,10 @@ export async function realtime(req: Request, env: any): Promise<Response> {
         } else if (d.type === "error") send({ type: "error", error: { message: d.error?.message ?? "claude stream error" } });
       }
     }
-    if (!released && !sawTool) { released = true; send({ type: "response.output_audio_transcript.delta", delta: full }); }
-    if (myGen === gen && (released || !sawTool)) flushSentence(true);
+    const skip = silentToolText && !sawTool && full.trim().replace(/[^A-Za-z]/g, "").toUpperCase() === "SKIP"; // proactive update that does not matter
+    if (skip) { sentence = ""; full = ""; released = false; }
+    if (!released && !sawTool && !skip) { released = true; send({ type: "response.output_audio_transcript.delta", delta: full }); }
+    if (myGen === gen && !skip && (released || !sawTool)) flushSentence(true);
     await speakChain;
     const content = blocks.filter((b) => b.type === "text" ? b.text : b.type === "tool_use").map((b) => b.type === "text" ? { type: "text", text: b.text } : { type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} });
     if (content.length) messages.push({ role: "assistant", content }); else messages.pop(); // nothing came back: forget the user turn too

@@ -109,6 +109,7 @@ extension HerdrTools {
                 if error.lowercased().contains("blocked") { return Outcome(output: "\(target) needs approval:\n" + readHc(target, 30, run), watch: nil) }
                 return Outcome(output: "error: " + error, watch: nil)
             }
+            if pmMode { PMWatcher.askSent() }
             return Outcome(output: pmMode ? "sent; say nothing until the reply arrives" : "sent; \(target) is working", watch: target)
         case "read_agent", "read_pane":
             return Outcome(output: readHc(target, args["lines"] as? Int ?? reportLines, run, preferReply: args["preferReply"] as? Bool ?? false), watch: nil)
@@ -254,11 +255,14 @@ extension HerdrTools {
                     let screen = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["text"] as? String ?? ""
                     if let reply = lastReply(screen) {
                         if pmMode {
+                            PMWatcher.askAnswered()
+                            _ = PMWatcher.claim(reply)
                             done("[your own written reply is ready: say it aloud now in the first person, in your own words, two short sentences at most; it is not a message from anyone else]\n" + String(reply.prefix(3500)))
                             return
                         }
                         done("Agent \(target) is now \(state). Its last reply:\n" + untrusted(String(reply.prefix(3500))))
                     } else {
+                        if pmMode { PMWatcher.askAnswered() }
                         done("Agent \(target) is now \(state). Recent output:\n" + readHc(target, reportLines, run))
                     }
                 }

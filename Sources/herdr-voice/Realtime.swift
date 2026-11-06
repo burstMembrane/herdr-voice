@@ -439,6 +439,12 @@ final class Realtime {
 
     /// Sends a conversation item that should get a spoken reply, or keeps it for the next session and makes sure
     /// one is coming: an agent report is worth reopening the session for, even while muted.
+    /// A proactive update from the PM watcher: only into a live session, so a quiet or muted one is never woken for it.
+    func deliverUpdate(_ text: String) {
+        guard status == .live, established else { return }
+        deliver(text)
+    }
+
     private func deliver(_ text: String) {
         if status == .live && established {
             addReplyText(text)

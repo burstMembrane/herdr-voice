@@ -1,0 +1,62 @@
+import Foundation
+
+/// Product-manager mode: notices when the PM's session finishes a turn by itself (a monitor event, an agent report)
+/// and hands its reply to the voice, so Liam does not have to keep asking. Replies to the voice's own questions are
+/// reported by the settle path instead; `claim` makes sure each reply is spoken once.
+public final class PMWatcher {
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var lastClaimed = ""
+    private nonisolated(unsafe) static var outstanding = 0
+
+    /// True for the first caller with this reply text; later callers get false.
+    static func claim(_ reply: String) -> Bool {
+        lock.withLock {
+            if reply == lastClaimed { return false }
+            lastClaimed = reply
+            return true
+        }
+    }
+    static func askSent() { lock.withLock { outstanding += 1 } }
+    static func askAnswered() { lock.withLock { outstanding = max(0, outstanding - 1) } }
+    private static var asking: Bool { lock.withLock { outstanding > 0 } }
+
+    private let queue = DispatchQueue(label: "herdr-voice.pm-watch", qos: .utility)
+    private var timer: DispatchSourceTimer?
+    private var lastTurn: Int?
+    private var pendingTurn: Int?
+    private let run: HerdrTools.Runner
+    private let onUpdate: (String) -> Void
+
+    public init(run: @escaping HerdrTools.Runner = HerdrTools.herdr, onUpdate: @escaping (String) -> Void) {
+        self.run = run
+        self.onUpdate = onUpdate
+    }
+
+    public func start(every seconds: Double = 4) {
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + seconds, repeating: seconds)
+        t.setEventHandler { [weak self] in self?.tick() }
+        timer = t
+        t.resume()
+    }
+
+    public func stop() { timer?.cancel(); timer = nil }
+
+    func tick() {
+        guard let pm = HerdrTools.pmTerminal(run),
+              let obj = try? JSONSerialization.jsonObject(with: Data(run(["get", pm, "--json"]).utf8)) as? [String: Any],
+              let turn = obj["turn"] as? Int else { return }
+        let state = ((obj["status"] as? [String: Any])?["state"] as? String) ?? ""
+        guard let seen = lastTurn else { lastTurn = turn; return } // what happened before we started is not news
+        guard state != "working", turn > seen else { return }
+        // Two quiet ticks in a row on the same turn: a burst of turns is reported once, at its end.
+        guard pendingTurn == turn else { pendingTurn = turn; return }
+        lastTurn = turn
+        pendingTurn = nil
+        guard !Self.asking else { return } // the voice asked something; its own answer is on the way
+        let raw = run(["read", pm, "--lines", "120", "--json"])
+        let screen = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["text"] as? String ?? ""
+        guard let reply = HerdrTools.lastReply(screen), Self.claim(reply) else { return }
+        onUpdate("[your written mind finished a turn on its own and nobody asked: tell Liam in the first person, in two short sentences at most, only if it matters to him (a decision he must make, something finished, something failed or is blocked); otherwise reply with exactly SKIP and nothing else]\n" + String(reply.prefix(3500)))
+    }
+}
