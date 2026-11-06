@@ -17,11 +17,13 @@ origin=$(tail -n 400 "$tp" | jq -s -r '
     else "voice" end')
 [ "$origin" = voice ] || exit 0
 [ -n "$reply" ] || exit 0
-# Plain spoken text: no markdown, code, links or list markers; the first two sentences plus a closing question, if any.
+# Plain spoken text: no markdown, code, links or list markers, and no "What I skipped" sign-off. The whole reply is
+# spoken, up to MAX_CHARS (cut at a sentence end).
 text=$(printf '%s' "$reply" | python3 -c '
 import re, sys
 limit = int(sys.argv[1])
 t = sys.stdin.read()
+t = re.split(r"(?i)\n\s*what i skipped", t)[0]
 t = re.sub(r"```.*?```", " ", t, flags=re.S)
 t = re.sub(r"`[^`]*`", " ", t)
 t = t.replace("**", "")
@@ -29,13 +31,12 @@ t = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", t)
 t = re.sub(r"(?m)^\s*(#+|>|[-*|])\s*", "", t)
 t = re.sub(r"(^|\s)\d+[.)]\s+", " ", t)
 t = re.sub(r"\s+", " ", t).strip()
-s = re.split(r"(?<=[.!?])\s+", t)
-out = s[:2]
-if len(s) > 2 and s[-1].endswith("?"):
-    out.append(s[-1])
-r = " ".join(out)
-print(r if len(r) <= limit else r[:limit].rsplit(" ", 1)[0])
-' "${MAX_CHARS:-260}")
+if len(t) > limit:
+    t = t[:limit]
+    cut = max(t.rfind(". "), t.rfind("? "), t.rfind("! "))
+    t = t[:cut + 1] if cut > limit // 2 else t.rsplit(" ", 1)[0]
+print(t)
+' "${MAX_CHARS:-1500}")
 [ ${#text} -ge 2 ] || exit 0
 if [ -n "$DRY_RUN" ]; then echo "WOULD SPEAK: $text"; exit 0; fi
 jq -nc --arg t "$text" '{type:"speak",text:$t}' | nc -U -w 2 "$sock"

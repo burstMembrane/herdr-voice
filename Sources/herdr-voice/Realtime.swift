@@ -641,7 +641,7 @@ final class Realtime {
         case .sessionReady:
             break
         case .audioDelta(let item, let b64):
-            if !droppingAudio { enforce(policy.audio(base64Count: b64.utf8.count)) }
+            if !droppingAudio, !ChannelMode.on { enforce(policy.audio(base64Count: b64.utf8.count)) }
             if !droppingAudio { audio.play(base64: b64, item: item) }
         case .responseCreated:
             replies.responseCreated()
@@ -652,7 +652,7 @@ final class Realtime {
             // A run_shell approval question reads the command aloud on purpose.
             policy = SpeechPolicy(allowCode: ConfirmGate.shared.pendingAction?.hasPrefix("run_shell") == true)
         case .assistantTranscriptDelta(let delta):
-            enforce(policy.feed(delta))
+            if !ChannelMode.on { enforce(policy.feed(delta)) }
         case .assistantTranscript(let t):
             log("voice: \(t)")
             recap.add("voice", t)
